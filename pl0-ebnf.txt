@@ -1,0 +1,40 @@
+program:
+  block, '.'
+
+block:
+  { constDecl }, { varDecl }, { funcDecl }, statement
+
+constDecl:
+  'const', ident, '=', number, { ',' , ident, '=', number }, ';'
+
+varDecl:
+  'var', ident, { ',', ident }, ';'
+
+funcDecl:
+  'function', ident, '(', [ ident, { ',', ident } ], ')', block, ';'
+
+statement:
+    ''
+  | ident, ':=', expression
+  | 'begin', statement, { ';', statement }, 'end'
+  | 'if', condition, 'then', statement
+  | 'while', condition, 'do', statement
+  | 'return', expression
+  | 'write', expression
+  | 'writeln'
+
+condition:
+    'odd', expression
+  | expression, ( '=' | '<>' | '<' | '>' | '<=' | '>=' ), expression
+
+expression:
+  [ ( '+' | '-' ) ], term, { ('+' | '-'), term }
+
+term:
+  factor, { ('*' | '/' ), factor }
+
+factor:
+    ident
+  | number
+  | ident, '(', [ expression, { ',', expression } ], ')'
+  | '(', expression, ')'
