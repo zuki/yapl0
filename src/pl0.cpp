@@ -18,18 +18,17 @@
 #include "llvm/Analysis/InstructionSimplify.h"
 #include "lexer.hpp"
 #include <iostream>
-/*
-#include "AST.hpp"
+#include "ast.hpp"
 #include "parser.hpp"
-#include "codegen.hpp"
-#include "pl0.hpp"
+//#include "codegen.hpp"
+//#include "pl0.hpp"
 
 
-extern std::unique_ptr<llvm::Module> TheModule;
+//extern std::unique_ptr<llvm::Module> TheModule;
 std::unique_ptr<Parser> TheParser;
 std::unique_ptr<ProgramAST> TheProgramAST;
-std::unique_ptr<CodeGen> TheCodegen;
-*/
+//std::unique_ptr<CodeGen> TheCodegen;
+
 llvm::cl::opt<std::string> OutputFilename("o", llvm::cl::desc("Specify output filename"), llvm::cl::value_desc("filename"));
 llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional, llvm::cl::desc("<input file>"), llvm::cl::Required);
 
@@ -39,12 +38,13 @@ llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional, llvm::cl::desc("<
 int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
+/*
 auto Tokens = LexicalAnalysis(InputFilename);
 
 if (Tokens)
   Tokens->printTokens();
+*/
 
-/*
   TheParser = llvm::make_unique<Parser>(InputFilename);
   if (!TheParser->doParse()) {
     fprintf(stderr, "err at parser or lexer\n");
@@ -53,11 +53,20 @@ if (Tokens)
 
   //get AST
   TheProgramAST = TheParser->getAST();
-  if(!TheProgramAST){
+  if (!TheProgramAST) {
     fprintf(stderr,"Program is empty");
     exit(1);
   }
 
+  auto block = TheProgramAST->getBlock();
+  auto consts = block->getConstants();
+  fprintf(stderr, "Consts size = %lu\n", consts.size());
+  auto variables = block->getVariables();
+  fprintf(stderr, "Variables size = %lu\n", variables.size());
+
+
+
+/*
   TheCodegen = llvm::make_unique<CodeGen>();
   if (!TheCodegen->doCodeGen(TheProgramAST, InputFileName)) {
     fprintf(stderr, "err at codegen\n");
