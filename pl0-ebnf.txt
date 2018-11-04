@@ -2,7 +2,7 @@ program:
   block, '.'
 
 block:
-  { constDecl }, { varDecl }, { funcDecl }, statement
+  { constDecl | varDecl | funcDecl }, statement
 
 constDecl:
   'const', ident, '=', number, { ',' , ident, '=', number }, ';'
