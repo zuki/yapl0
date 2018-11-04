@@ -64,8 +64,6 @@ public:
 
 } Token;
 
-
-
 /**
   * 切り出したToken格納用クラス
   */
@@ -92,7 +90,7 @@ public:
     bool printTokens();
     int getCurIndex() { return CurIndex; }
     bool applyTokenIndex(int index) { CurIndex=index;return true; }
-
+    bool isSymbol(std::string str) { return getCurType() == TOK_SYMBOL && getCurString() == str; }
 };
 
 std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename);
