@@ -63,6 +63,8 @@ if (Tokens)
   fprintf(stderr, "Consts size = %lu\n", consts.size());
   auto variables = block->getVariables();
   fprintf(stderr, "Variables size = %lu\n", variables.size());
+  auto functions = block->getFunctions();
+  fprintf(stderr, "Functions size = %lu\n", functions.size());
 
 
 

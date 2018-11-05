@@ -18,8 +18,8 @@ class ProgramAST;
 class BlockAST;
 class ConstDeclAST;
 class VarDeclAST;
-/*
 class FuncDeclAST;
+/*
 class StatementAST;
 class AssignAST;
 class BeginAST;
@@ -93,20 +93,23 @@ class ProgramAST {
 class BlockAST {
   std::vector<std::unique_ptr<ConstDeclAST>> Constants;
   std::vector<std::unique_ptr<VarDeclAST>> Variables;
-  //std::vector<std::unique_ptr<FuncDeclAST> Functions;
+  std::vector<std::unique_ptr<FuncDeclAST>> Functions;
 
   public:
     BlockAST() {}
     ~BlockAST() {}
     void addConstant(std::unique_ptr<ConstDeclAST> constant);
     void addVariable(std::unique_ptr<VarDeclAST> variable);
-    //bool addFunction(std::unique_ptr<FuncDeclAST> function);
+    void addFunction(std::unique_ptr<FuncDeclAST> function);
     bool empty();
     std::vector<std::unique_ptr<ConstDeclAST>> getConstants() {
       return std::move(Constants);
     }
     std::vector<std::unique_ptr<VarDeclAST>> getVariables() {
       return std::move(Variables);
+    }
+    std::vector<std::unique_ptr<FuncDeclAST>> getFunctions() {
+      return std::move(Functions);
     }
 };
 
@@ -139,5 +142,24 @@ public:
   void addVariable(std::string name) { Names.push_back(name); }
   std::vector<std::string> getNames() { return Names; }
 };
+
+/**
+  * 関数定義を表すAST
+  */
+class FuncDeclAST {
+private:
+  std::string Name;
+  std::vector<std::string> Parameters;
+  std::unique_ptr<BlockAST> Block;
+
+public:
+  FuncDeclAST(std::string name, std::vector<std::string> parameters, std::unique_ptr<BlockAST> block):
+    Name(name), Parameters(parameters), Block(std::move(block)) {}
+  ~FuncDeclAST() {}
+  std::string getName() { return Name; }
+  std::vector<std::string> getParameters() { return Parameters; }
+  std::unique_ptr<BlockAST> getBlock() { return std::move(Block); }
+};
+
 
 #endif

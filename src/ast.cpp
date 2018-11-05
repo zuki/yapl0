@@ -21,11 +21,10 @@ void BlockAST::addVariable(std::unique_ptr<VarDeclAST> variable) {
   * BlockASTメソッド
   * @param  std::unique_ptr<FuncDeclAST>ue
   */
-/*
 void BlockAST::addFunction(std::unique_ptr<FuncDeclAST> function) {
-    Functions.push_back(function);
+    Functions.push_back(std::move(function));
 }
-*/
+
 /**
   * BlockASTメソッド
   * @retirm true

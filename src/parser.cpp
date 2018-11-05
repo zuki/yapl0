@@ -60,25 +60,31 @@ bool Parser::visitProgram() {
 std::unique_ptr<BlockAST> Parser::visitBlock() {
   auto Block = llvm::make_unique<BlockAST>();
   while (true) {
+    // std::moveするとuniq_ptrはnullになってしまうので
+    // 別にフラグが必要
     bool c = false, v = false;
+
     auto ConstAST = visitConstDecl();
     if (ConstAST) {
       Block->addConstant(std::move(ConstAST));
       c = true;
     }
+
     auto VarAST = visitVarDecl();
     if (VarAST) {
       Block->addVariable(std::move(VarAST));
       v = true;
     }
 
-/*
-    std::unique_ptr<FuncDeclAST> BlockAST = visitFuncDecl();
-    if (BlockAST)
-      BlockAST->addFunction(std::move(func));
-    if (!ConstAST && !VarAST && !func)
-*/
     if (!c && !v)
+      break;
+  }
+
+  while (true) {
+    auto FuncAST = visitFuncDecl();
+    if (FuncAST) {
+      Block->addFunction(std::move(FuncAST));
+    } else
       break;
   }
 
@@ -106,6 +112,7 @@ std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
   // eat ident
   Tokens->getNextToken();
   if (!Tokens->isSymbol("=")) {
+    fprintf(stderr, "visitConstDecl: expected '=' but %s\n", Tokens->getCurString().c_str());
     Tokens->applyTokenIndex(bkup);
     return nullptr;
   }
@@ -122,6 +129,7 @@ std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
       // eat ident
       Tokens->getNextToken();
       if (!Tokens->isSymbol("=")) {
+        fprintf(stderr, "visitConstDecl: expected '=' but %s\n", Tokens->getCurString().c_str());
         Tokens->applyTokenIndex(bkup);
         return nullptr;
       }
@@ -140,6 +148,7 @@ std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
   }
   // eat ';'
   Tokens->getNextToken();
+
   return ConstAST;
 }
 
@@ -179,4 +188,68 @@ std::unique_ptr<VarDeclAST> Parser::visitVarDecl() {
   Tokens->getNextToken();
 
   return VarAST;
+}
+
+// funcDecl: ''function', ident, '(', [ ident, { ',', ident } ], ')', block, ';'
+/**
+  * FuncDecl用構文解析メソッド
+  * @return 成功: std::unique_ptr<FuncDeclAST>, 失敗: nullptr
+  */
+std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
+  int bkup = Tokens->getCurIndex();
+  std::string name;
+  std::vector<std::string> parameters;
+
+  if (Tokens->getCurType() != TOK_FUNCTION)
+    return nullptr;
+
+  // eat 'function'
+  Tokens->getNextToken();
+  name = Tokens->getCurString();
+  // eat ident
+  Tokens->getNextToken();
+  if (!Tokens->isSymbol("(")) {
+    fprintf(stderr, "visitFuncDecl: expected '(' but %s\n", Tokens->getCurString().c_str());
+    Tokens->applyTokenIndex(bkup);
+    return nullptr;
+  }
+  // eat '('
+  Tokens->getNextToken();
+	bool is_first_param = true;
+	while(true){
+		//','
+		if (!is_first_param && Tokens->isSymbol(",")) {
+			Tokens->getNextToken();
+		}
+		if (Tokens->getCurType() == TOK_IDENTIFIER) {
+      parameters.push_back(Tokens->getCurString());
+			Tokens->getNextToken();
+		} else {
+			break; // 最初に識別子が来なければparamtersは終了
+		}
+    is_first_param = false;
+  }
+  if (!Tokens->isSymbol(")")) {
+    fprintf(stderr, "visitFuncDecl: expected ')' but %s\n", Tokens->getCurString().c_str());
+    Tokens->applyTokenIndex(bkup);
+    return nullptr;
+  }
+  // eat ')'
+  Tokens->getNextToken();
+
+  auto block = visitBlock();
+  if (!block) {
+    fprintf(stderr, "visitFuncDecl: error at block\n");
+    return nullptr;
+  }
+
+  if (!Tokens->isSymbol(";")) {
+    fprintf(stderr, "visitFuncDecl: expected ';' but %s\n", Tokens->getCurString().c_str());
+    Tokens->applyTokenIndex(bkup);
+    return nullptr;
+  }
+  // eat ';'
+  Tokens->getNextToken();
+
+  return llvm::make_unique<FuncDeclAST>(name, parameters, std::move(block));
 }

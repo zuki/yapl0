@@ -1,4 +1,6 @@
 const m = 7, n = 85;
 var x, y;
 const o = 7, p = 85;
+function sum(a, b) var x;
+;
 .

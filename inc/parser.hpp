@@ -40,6 +40,7 @@ private:
   std::unique_ptr<BlockAST> visitBlock();
   std::unique_ptr<ConstDeclAST> visitConstDecl();
   std::unique_ptr<VarDeclAST> visitVarDecl();
+  std::unique_ptr<FuncDeclAST> visitFuncDecl();
 } Parser;
 
 #endif
