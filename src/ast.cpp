@@ -27,6 +27,14 @@ void BlockAST::addFunction(std::unique_ptr<FuncDeclAST> function) {
 
 /**
   * BlockASTメソッド
+  * @param  std::unique_ptr<FuncDeclAST>ue
+  */
+void BlockAST::addStatement(std::unique_ptr<BaseStmtAST> statement) {
+    Statement = std::move(statement);
+}
+
+/**
+  * BlockASTメソッド
   * @retirm true
   */
 bool BlockAST::empty() {

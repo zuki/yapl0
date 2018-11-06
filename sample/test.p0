@@ -1,6 +1,11 @@
 const m = 7, n = 85;
 var x, y;
 const o = 7, p = 85;
-function sum(a, b) var x;
-;
-.
+function sum(a, b)
+  var z;
+  begin
+    z := a;
+  end;
+begin
+  if odd m then x := 1;
+end.

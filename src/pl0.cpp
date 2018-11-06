@@ -65,6 +65,8 @@ if (Tokens)
   fprintf(stderr, "Variables size = %lu\n", variables.size());
   auto functions = block->getFunctions();
   fprintf(stderr, "Functions size = %lu\n", functions.size());
+  auto statement = block->getStatement();
+  fprintf(stderr, "Statement id = %d\n", statement->getValueID());
 
 
 

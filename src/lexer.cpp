@@ -206,6 +206,7 @@ Token TokenStream::getToken() {
   * @return 成功時：true　失敗時：false
   */
 bool TokenStream::getNextToken(){
+  //fprintf(stderr, "eat %s\n", Tokens[CurIndex]->getTokenString().c_str());
   int size = Tokens.size();
   if(--size == CurIndex){
     return false;

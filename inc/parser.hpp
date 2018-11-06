@@ -41,6 +41,19 @@ private:
   std::unique_ptr<ConstDeclAST> visitConstDecl();
   std::unique_ptr<VarDeclAST> visitVarDecl();
   std::unique_ptr<FuncDeclAST> visitFuncDecl();
+  std::unique_ptr<BaseStmtAST> visitStatement();
+  std::unique_ptr<BaseStmtAST> visitAssign();
+  std::unique_ptr<BaseStmtAST> visitBeginEnd();
+  std::unique_ptr<BaseStmtAST> visitIfThen();
+  std::unique_ptr<BaseStmtAST> visitWhileDo();
+  std::unique_ptr<BaseStmtAST> visitReturn();
+  std::unique_ptr<BaseStmtAST> visitWrite();
+  std::unique_ptr<BaseExpAST> visitCondition();
+  std::unique_ptr<BaseExpAST> visitExpression(std::unique_ptr<BaseExpAST> lhs);
+  std::unique_ptr<BaseExpAST> visitTerm(std::unique_ptr<BaseExpAST> lhs);
+  std::unique_ptr<BaseExpAST> visitFactor();
+  std::unique_ptr<BaseExpAST> visitCall(const std::string &name);
+  void check(const std::string method);
 } Parser;
 
 #endif
