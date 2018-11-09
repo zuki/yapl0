@@ -92,13 +92,15 @@ std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename) {
           next_token = llvm::make_unique<Token>(TOK_DIGIT, token_str, line_num);
         } else {
           token_str += next_char;
-          next_char = cur_line.at(index++);
-          while (isdigit(next_char)) {
-            token_str += next_char;
+          if (index < length) {
             next_char = cur_line.at(index++);
+            while (isdigit(next_char)) {
+              token_str += next_char;
+              next_char = cur_line.at(index++);
+            }
+            index--;
           }
           next_token = llvm::make_unique<Token>(TOK_DIGIT, token_str, line_num);
-          index--;
         }
       // コメント {* コメント *}
       } else if (next_char == '{') {
