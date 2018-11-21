@@ -99,24 +99,26 @@ class ProgramAST {
   * Blockを表すAST
   */
 class BlockAST {
-  std::vector<std::unique_ptr<ConstDeclAST>> Constants;
-  std::vector<std::unique_ptr<VarDeclAST>> Variables;
+  std::unique_ptr<ConstDeclAST> Constant;
+  std::unique_ptr<VarDeclAST> Variable;
   std::vector<std::unique_ptr<FuncDeclAST>> Functions;
   std::unique_ptr<BaseStmtAST> Statement;
 
   public:
     BlockAST() {}
     ~BlockAST() {}
-    void addConstant(std::unique_ptr<ConstDeclAST> constant);
-    void addVariable(std::unique_ptr<VarDeclAST> variable);
+    void setConstant(std::unique_ptr<ConstDeclAST> constant);
+    void setVariable(std::unique_ptr<VarDeclAST> variable);
     void addFunction(std::unique_ptr<FuncDeclAST> function);
-    void addStatement(std::unique_ptr<BaseStmtAST> statement);
-    bool empty();
-    std::vector<std::unique_ptr<ConstDeclAST>> getConstants() {
-      return std::move(Constants);
+    void setStatement(std::unique_ptr<BaseStmtAST> statement) {
+      Statement = std::move(statement);
     }
-    std::vector<std::unique_ptr<VarDeclAST>> getVariables() {
-      return std::move(Variables);
+    bool empty();
+    std::unique_ptr<ConstDeclAST> getConstant() {
+      return std::move(Constant);
+    }
+    std::unique_ptr<VarDeclAST> getVariable() {
+      return std::move(Variable);
     }
     std::vector<std::unique_ptr<FuncDeclAST>> getFunctions() {
       return std::move(Functions);
@@ -131,15 +133,18 @@ class BlockAST {
   */
 class ConstDeclAST {
 private:
-  std::map<std::string, int> NameValues;
+  std::vector<std::pair<std::string, int>> NameTable;
 
 public:
   ConstDeclAST() {}
   ~ConstDeclAST() {}
   void addConstant(const std::string &name, int value) {
-    NameValues[name] = value;
+    NameTable.emplace_back(name, value);
   }
-  std::map<std::string, int> getNameValues() { return NameValues; }
+  void setNameTable(std::vector<std::pair<std::string, int>> table) {
+    NameTable = table;
+  }
+  std::vector<std::pair<std::string, int>> getNameTable() { return NameTable; }
 };
 
 /**
@@ -147,13 +152,14 @@ public:
   */
 class VarDeclAST {
 private:
-  std::vector<std::string> Names;
+  std::vector<std::string> NameTable;
 
 public:
   VarDeclAST() {}
   ~VarDeclAST() {}
-  void addVariable(const std::string &name) { Names.push_back(name); }
-  std::vector<std::string> getNames() { return Names; }
+  void addVariable(const std::string &name) { NameTable.push_back(name); }
+  void setNameTable(std::vector<std::string> table) { NameTable = table; }
+  std::vector<std::string> getNameTable() { return NameTable; }
 };
 
 /**
@@ -413,6 +419,7 @@ public:
   void addArg(std::unique_ptr<BaseExpAST> arg) {
     Args.push_back(std::move(arg));
   }
+  int getNumOfArgs() { return (int)Args.size(); }
 };
 
 /**

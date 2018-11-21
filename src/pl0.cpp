@@ -30,6 +30,7 @@ std::unique_ptr<ProgramAST> TheProgramAST;
 //std::unique_ptr<CodeGen> TheCodegen;
 
 llvm::cl::opt<std::string> OutputFilename("o", llvm::cl::desc("Specify output filename"), llvm::cl::value_desc("filename"));
+llvm::cl::opt<bool> debug("d", llvm::cl::desc("Enable debug"), llvm::cl::value_desc("filename"));
 llvm::cl::opt<std::string> InputFilename(llvm::cl::Positional, llvm::cl::desc("<input file>"), llvm::cl::Required);
 
 /**
@@ -45,7 +46,7 @@ if (Tokens)
   Tokens->printTokens();
 */
 
-  TheParser = llvm::make_unique<Parser>(InputFilename);
+  TheParser = llvm::make_unique<Parser>(InputFilename, debug);
   if (!TheParser->doParse()) {
     fprintf(stderr, "err at parser or lexer\n");
     exit(1);
@@ -59,16 +60,10 @@ if (Tokens)
   }
 
   auto block = TheProgramAST->getBlock();
-  auto consts = block->getConstants();
-  fprintf(stderr, "Consts size = %lu\n", consts.size());
-  auto variables = block->getVariables();
-  fprintf(stderr, "Variables size = %lu\n", variables.size());
+  auto constant = block->getConstant();
+  auto variable = block->getVariable();
   auto functions = block->getFunctions();
-  fprintf(stderr, "Functions size = %lu\n", functions.size());
   auto statement = block->getStatement();
-  fprintf(stderr, "Statement id = %d\n", statement->getValueID());
-
-
 
 /*
   TheCodegen = llvm::make_unique<CodeGen>();

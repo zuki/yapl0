@@ -91,6 +91,7 @@ public:
     int getCurIndex() { return CurIndex; }
     bool applyTokenIndex(int index) { CurIndex=index;return true; }
     bool isSymbol(std::string str) { return getCurType() == TOK_SYMBOL && getCurString() == str; }
+    int getLine() { return Tokens[CurIndex]->getLine(); }
 };
 
 std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename);

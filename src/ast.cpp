@@ -3,18 +3,32 @@
 /**
   * BlockASTメソッド
   * @param  std::unique_ptr<ConstDeclAST>
-  * @retirm true
+  * @return void
   */
-void BlockAST::addConstant(std::unique_ptr<ConstDeclAST> constant) {
-    Constants.push_back(std::move(constant));
+void BlockAST::setConstant(std::unique_ptr<ConstDeclAST> constant) {
+    if (!Constant) {
+      Constant = std::move(constant);
+    } else {
+      auto dest = Constant->getNameTable();
+      auto source = constant->getNameTable();
+      dest.insert(dest.end(), source.begin(), source.end());
+      Constant->setNameTable(dest);
+    }
 }
 
 /**
   * BlockASTメソッド
   * @param  std::unique_ptr<VarDeclAST>
   */
-void BlockAST::addVariable(std::unique_ptr<VarDeclAST> variable) {
-    Variables.push_back(std::move(variable));
+void BlockAST::setVariable(std::unique_ptr<VarDeclAST> variable) {
+    if (!Variable) {
+      Variable = std::move(variable);
+    } else {
+      auto dest = Variable->getNameTable();
+      auto source = variable->getNameTable();
+      dest.insert(dest.end(), source.begin(), source.end());
+      Variable->setNameTable(dest);
+    }
 }
 
 /**
@@ -27,16 +41,8 @@ void BlockAST::addFunction(std::unique_ptr<FuncDeclAST> function) {
 
 /**
   * BlockASTメソッド
-  * @param  std::unique_ptr<FuncDeclAST>ue
-  */
-void BlockAST::addStatement(std::unique_ptr<BaseStmtAST> statement) {
-    Statement = std::move(statement);
-}
-
-/**
-  * BlockASTメソッド
   * @retirm true
   */
 bool BlockAST::empty() {
-  return Constants.size() == 0 && Variables.size() == 0;
+  return !Constant && !Variable;
 }

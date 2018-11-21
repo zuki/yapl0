@@ -10,7 +10,7 @@ std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename) {
   std::ifstream ifs;
   std::string cur_line;
   std::string token_str;
-  int line_num = 0;
+  int line_num = 1;
   bool iscomment = false;
 
   ifs.open(input_filename.c_str(), std::ios::in);
@@ -27,6 +27,7 @@ std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename) {
 
     while(index < length) {
       next_char = cur_line.at(index++);
+      //fprintf(stderr, "char: %c, index: %d, length: %d\n", next_char, index, length);
 
       //コメントアウト読み飛ばし {* コメント *}
       if (iscomment) {
