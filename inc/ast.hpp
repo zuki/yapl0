@@ -19,7 +19,6 @@ class BlockAST;
 class ConstDeclAST;
 class VarDeclAST;
 class FuncDeclAST;
-class StatmentAST;
 class NullAST;
 class AssignAST;
 class BeginEndAST;
@@ -181,24 +180,6 @@ public:
 };
 
 /**
-  * 文を表すAST
-  */
-/*
-class StatementAST : BaseStmtAST {
-private:
-  std::vector<BaseStmtAST> Statements;
-
-public:
-  StatementAST(): BaseStmetAST() {}
-  ~StatementAST() {}
-  std::vector<BaseStmtAST> getStatements() { return Statements; }
-  void addStatement(std::unique_ptr<BaseStmtAST> statement) {
-    Statements.push_back(std::move(statement));
-  }
-};
-*/
-
-/**
   * 空文を表すAST
   */
 class NullAST : public BaseStmtAST {
@@ -226,6 +207,7 @@ public:
   static inline bool classof(BaseStmtAST const* base) {
      return base->getValueID() == AssignID;
   }
+  std::string getName() { return Name; }
   std::unique_ptr<BaseExpAST> getRHS() {
     return std::move(RHS);
   }
@@ -408,7 +390,8 @@ public:
     : BaseExpAST(CallExprID), Callee(callee) {}
   ~CallExprAST() {}
   std::string getCallee() { return Callee; }
-  std::unique_ptr<BaseExpAST> getArgs(unsigned i) {
+  size_t getArgSize() { return Args.size(); }
+  std::unique_ptr<BaseExpAST> getArgs(size_t i) {
     if (i < Args.size()) return std::move(Args.at(i));
     else return nullptr;
   }

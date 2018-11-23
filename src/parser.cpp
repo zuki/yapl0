@@ -305,7 +305,7 @@ std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
 // statment
 /**
   * Statement用構文解析メソッド
-  * @return 成功: std::unique_ptr<StatementAST>, 失敗: nullptr
+  * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseStmtAST> Parser::visitStatement() {
   debug_check("visitStatement");
