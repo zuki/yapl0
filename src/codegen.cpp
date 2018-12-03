@@ -258,7 +258,7 @@ llvm::Value *CodeGen::numberExp(std::unique_ptr<NumberAST> exp_ast) {
 }
 
 void CodeGen::setLibraries() {
-    // declare printf(*char, ...)
+    // declare int printf(*char, ...)
   std::vector<llvm::Type *> Int8s(1, TheBuilder.getInt8PtrTy());
   auto *printfFT =
     llvm::FunctionType::get(TheBuilder.getInt32Ty(), Int8s, true);
