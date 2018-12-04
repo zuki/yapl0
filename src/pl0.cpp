@@ -23,7 +23,9 @@
 #include "codegen.hpp"
 #include "error.hpp"
 
-llvm::cl::opt<bool> debug("d", llvm::cl::desc("Enable debug"), llvm::cl::value_desc("filename"));
+llvm::cl::opt<bool> debug("d", llvm::cl::desc("Enable debug"));
+llvm::cl::opt<bool> output_lexer("l", llvm::cl::desc("Output token list"));
+llvm::cl::opt<bool> output_llvm_as("a", llvm::cl::desc("Output llvm-as code"));
 llvm::cl::opt<std::string> InputFileName(llvm::cl::Positional, llvm::cl::desc("<input file>"), llvm::cl::Required);
 
 /**
@@ -32,12 +34,14 @@ llvm::cl::opt<std::string> InputFileName(llvm::cl::Positional, llvm::cl::desc("<
 int main(int argc, char **argv) {
   llvm::cl::ParseCommandLineOptions(argc, argv);
 
-/*
-auto Tokens = LexicalAnalysis(InputFileName);
+  if (output_lexer) {
+    auto Tokens = LexicalAnalysis(InputFileName);
 
-if (Tokens)
-  Tokens->printTokens();
-*/
+    if (Tokens)
+      Tokens->printTokens();
+
+    exit(1);
+  }
 
   auto TheParser = llvm::make_unique<Parser>(InputFileName, debug);
   if (!TheParser->doParse()) {
@@ -49,12 +53,18 @@ if (Tokens)
   auto TheProgramAST = TheParser->getAST();
   if (!TheProgramAST) {
     fprintf(stderr,"Program is empty");
-    exit(1);
+    exit(0);
   }
 
   auto TheCodegen = llvm::make_unique<CodeGen>(InputFileName);
 
   TheCodegen->generate(std::move(TheProgramAST));
+
+  if (output_llvm_as) {
+    auto module = TheCodegen->getModule();
+    module->dump();
+    exit(0);
+  }
 
   llvm::InitializeAllTargetInfos();
   llvm::InitializeAllTargets();
