@@ -36,7 +36,7 @@ std::unique_ptr<ProgramAST> Parser::getAST() {
 bool Parser::visitProgram() {
   debug_check("visitProgram");
   // block
-  //upLevel();
+  blockIn();
   std::unique_ptr<BlockAST> Block = visitBlock();
   if (!Block || Block->empty()) {
     fprintf(stderr, "error at visitBlock\n");
@@ -61,8 +61,6 @@ bool Parser::visitProgram() {
   */
 std::unique_ptr<BlockAST> Parser::visitBlock() {
   debug_check("visitBlock");
-  // ブロック階層を上げる
-  blockIn();
 
   auto Block = llvm::make_unique<BlockAST>();
   while (true) {
@@ -277,6 +275,9 @@ std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
     return nullptr;
   }
   addSymbol(name, FUNC, parameters.size());
+  // ここからブロックレベルを上げる
+  blockIn();
+
   for (auto param : parameters) {
     if (findSymbol(param, PARAM)) {
       fprintf(stderr, "visitFuncDecl: duplicate param: %s\n", param.c_str());

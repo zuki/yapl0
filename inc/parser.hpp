@@ -56,7 +56,12 @@ private:
     各種構文解析メソッド
     */
   void blockIn() { CurrentLevel++; }
-  void blockOut() { CurrentLevel--; }
+  void blockOut() {
+    while (!SymbolTable.empty() && SymbolTable.back().level == CurrentLevel) {
+      SymbolTable.pop_back();
+    }
+    CurrentLevel--;
+  }
   bool visitProgram();
   std::unique_ptr<BlockAST> visitBlock();
   std::unique_ptr<ConstDeclAST> visitConstDecl();

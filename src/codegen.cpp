@@ -24,12 +24,12 @@ void CodeGen::generate(std::unique_ptr<ProgramAST> program) {
   auto *mainFunc = llvm::Function::Create(
       funcType, llvm::Function::ExternalLinkage, "main", TheModule.get());
   llvm::BasicBlock::Create(TheContext, "entrypoint", mainFunc);
+  ident_table.enterBlock();
   block(Program->getBlock(), mainFunc);
   TheBuilder.CreateRet(TheBuilder.getInt64(1));
 }
 
 void CodeGen::block(std::unique_ptr<BlockAST> block_ast, llvm::Function *func) {
-  ident_table.enterBlock();
   std::vector<std::string> vars;
 
   constant(block_ast->getConstant());
@@ -78,6 +78,7 @@ void CodeGen::function(std::unique_ptr<FuncDeclAST> func_ast) {
   auto *func = llvm::Function::Create(funcType, llvm::Function::ExternalLinkage, func_name, TheModule.get());
   llvm::BasicBlock::Create(TheContext, "entry", func);
   ident_table.appendFunction(func_name, func);
+  ident_table.enterBlock();
   auto itr = func->arg_begin();
   for (size_t i = 0; i < params.size(); i++) {
     ident_table.appendParam(params[i]);
