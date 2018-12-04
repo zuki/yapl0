@@ -28,7 +28,7 @@ public:
   void block(std::unique_ptr<BlockAST> block_ast, llvm::Function *func);
 
   void constant(std::unique_ptr<ConstDeclAST>);
-  void variable(std::unique_ptr<VarDeclAST>, std::vector<std::string> *vars);
+  void variable(std::unique_ptr<VarDeclAST>);
   void function(std::unique_ptr<FuncDeclAST>);
   void statement(std::unique_ptr<BaseStmtAST>);
   void statementAssign(std::unique_ptr<AssignAST> stmt_ast);

@@ -48,8 +48,8 @@ public:
     infos.emplace_back(name, IdType::VAR, nullptr, val, cur_level);
   }
 
-  void appendParam(const std::string &name) {
-    infos.emplace_back(name, IdType::PARAM, nullptr, nullptr, cur_level);
+  void appendParam(const std::string &name, llvm::Value *val) {
+    infos.emplace_back(name, IdType::PARAM, nullptr, val, cur_level);
   }
 
   void appendFunction(const std::string &name, llvm::Function *func) {

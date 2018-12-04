@@ -32,8 +32,9 @@ void CodeGen::generate(std::unique_ptr<ProgramAST> program) {
 void CodeGen::block(std::unique_ptr<BlockAST> block_ast, llvm::Function *func) {
   std::vector<std::string> vars;
 
+  TheBuilder.SetInsertPoint(&func->getEntryBlock());
   constant(block_ast->getConstant());
-  variable(block_ast->getVariable(), &vars);
+  variable(block_ast->getVariable());
   auto functions = block_ast->getFunctions();
   for(size_t i = 0; i < functions.size(); i++) {
     function(std::move(functions[i]));
@@ -45,12 +46,8 @@ void CodeGen::block(std::unique_ptr<BlockAST> block_ast, llvm::Function *func) {
     auto *alloca =
         TheBuilder.CreateAlloca(TheBuilder.getInt64Ty(), 0, itr->getName());
     TheBuilder.CreateStore(itr, alloca);
-    ident_table.appendVar(itr->getName(), alloca);
+    ident_table.appendParam(itr->getName(), alloca);
     itr++;
-  }
-  for (const auto &var : vars) {
-    auto *alloca = TheBuilder.CreateAlloca(TheBuilder.getInt64Ty(), 0, var);
-    ident_table.appendVar(var, alloca);
   }
   statement(block_ast->getStatement());
   ident_table.leaveBlock();
@@ -62,10 +59,12 @@ void CodeGen::constant(std::unique_ptr<ConstDeclAST> const_ast) {
     ident_table.appendConst(pair.first, TheBuilder.getInt64(pair.second));
 }
 
-void CodeGen::variable(std::unique_ptr<VarDeclAST> var_ast, std::vector<std::string> *vars) {
+void CodeGen::variable(std::unique_ptr<VarDeclAST> var_ast) {
   if (var_ast == nullptr) return;
-  for (auto name : var_ast->getNameTable())
-    vars->push_back(name);
+  for (auto name : var_ast->getNameTable()) {
+    auto *alloca = TheBuilder.CreateAlloca(TheBuilder.getInt64Ty(), 0, name);
+    ident_table.appendVar(name, alloca);
+  }
 }
 
 void CodeGen::function(std::unique_ptr<FuncDeclAST> func_ast) {
@@ -81,7 +80,6 @@ void CodeGen::function(std::unique_ptr<FuncDeclAST> func_ast) {
   ident_table.enterBlock();
   auto itr = func->arg_begin();
   for (size_t i = 0; i < params.size(); i++) {
-    ident_table.appendParam(params[i]);
     itr->setName(params[i]);
     itr++;
   }
@@ -247,7 +245,7 @@ llvm::Value *CodeGen::variableExp(std::unique_ptr<VariableAST> exp_ast) {
   case IdType::VAR:
     return TheBuilder.CreateLoad(val.val);
   case IdType::PARAM:
-    error("Param ident can not be factor");
+    return TheBuilder.CreateLoad(val.val);
   default:
     ; // for not warning
   }
