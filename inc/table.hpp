@@ -16,7 +16,7 @@ enum class IdType {
 class IdInfo {
 public:
   IdInfo(const std::string &name, IdType type, llvm::Function *func,
-         llvm::Value *val, size_t level)
+         llvm::Value *val, int level)
       : name(name), type(type), func(func), val(val), level(level) {}
 
 public:
@@ -24,7 +24,7 @@ public:
   IdType type;
   llvm::Function *func;
   llvm::Value *val;
-  size_t level;
+  int level;
 };
 
 class Table {
@@ -57,6 +57,7 @@ public:
   }
 
   void enterBlock() { cur_level++; }
+
   void leaveBlock() {
     while (!infos.empty() && infos.back().level == cur_level) {
       infos.pop_back();
@@ -64,9 +65,14 @@ public:
     cur_level--;
   }
 
-  size_t getLevel() const { return cur_level; }
+  int getLevel() const { return cur_level; }
+
+  void dumpInfos() {
+    for (const IdInfo &info : infos)
+      fprintf(stderr, "[%d] %s\n", info.level, info.name.c_str());
+  }
 
 private:
   std::vector<IdInfo> infos;
-  size_t cur_level;
+  int cur_level = -1;
 };

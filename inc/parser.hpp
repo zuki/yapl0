@@ -84,10 +84,9 @@ private:
   void addSymbol(std::string name, NameType type) {
     addSymbol(name, type, -1);
   }
-  void removeSymbolsOfCurrentLevel();
-  void deleteTemp(std::string name);
-  bool findSymbol(std::string name, NameType type, bool checkLevel, int num);
-  bool findSymbol(std::string name, NameType type) {
+  void deleteTemp(int pos);
+  int findSymbol(std::string name, NameType type, bool checkLevel, int num);
+  int findSymbol(std::string name, NameType type) {
     return findSymbol(name, type, true, -1);
   }
   bool remainedTemp();

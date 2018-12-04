@@ -119,6 +119,7 @@ std::unique_ptr<BlockAST> Parser::visitBlock() {
 std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
   debug_check("visitConstDecl");
   std::string name;
+  int pos;
 
   // TODO: 変数重複チェック
   int bkup = Tokens->getCurIndex();
@@ -136,11 +137,13 @@ std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
     return nullptr;
   }
   Tokens->getNextToken(); // eat '='
-  if (findSymbol(name, CONST)) {
+  if (findSymbol(name, CONST) > -1) {
     fprintf(stderr, "visitConstDecl: duplicate constant %s\n", name.c_str());
     Tokens->applyTokenIndex(bkup);
     return nullptr;
   }
+  if ((pos = findSymbol(name, TEMP)) > -1)
+    deleteTemp(pos);
   addSymbol(name, CONST);
   ConstAST->addConstant(name, Tokens->getCurNumVal());
   Tokens->getNextToken(); // eat number
@@ -154,11 +157,13 @@ std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
       return nullptr;
     }
     Tokens->getNextToken(); // eat '='
-    if (findSymbol(name, CONST)) {
+    if (findSymbol(name, CONST) > -1) {
       fprintf(stderr, "visitConstDecl: duplicate constant %s\n", Tokens->getCurString().c_str());
       Tokens->applyTokenIndex(bkup);
       return nullptr;
     }
+    if ((pos = findSymbol(name, TEMP)) > -1)
+      deleteTemp(pos);
     addSymbol(name, CONST);
     ConstAST->addConstant(name, Tokens->getCurNumVal());
     Tokens->getNextToken(); // eat number
@@ -180,6 +185,7 @@ std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
 std::unique_ptr<VarDeclAST> Parser::visitVarDecl() {
   debug_check("visitVarDecl");
   std::string name;
+  int pos;
 
   int bkup = Tokens->getCurIndex();
   auto VarAST = llvm::make_unique<VarDeclAST>();
@@ -190,13 +196,13 @@ std::unique_ptr<VarDeclAST> Parser::visitVarDecl() {
   // eat 'var'
   Tokens->getNextToken();
   name = Tokens->getCurString();
-  if (findSymbol(name, VAR)) {
+  if (findSymbol(name, VAR) > -1) {
     fprintf(stderr, "visitVarDecl: duplicate variable %s\n", name.c_str());
     Tokens->applyTokenIndex(bkup);
     return nullptr;
   }
-  if (findSymbol(name, TEMP))
-    deleteTemp(name);
+  if ((pos = findSymbol(name, TEMP)) > -1)
+    deleteTemp(pos);
   addSymbol(name, VAR);
   VarAST->addVariable(name);
   // eat ident
@@ -204,13 +210,13 @@ std::unique_ptr<VarDeclAST> Parser::visitVarDecl() {
   while(Tokens->isSymbol(",")) {
     Tokens->getNextToken(); // eat ','
     name = Tokens->getCurString();
-    if (findSymbol(name, VAR)) {
+    if (findSymbol(name, VAR) > -1) {
       fprintf(stderr, "visitVarDecl: duplicate variable %s\n", name.c_str());
       Tokens->applyTokenIndex(bkup);
       return nullptr;
     }
-    if (findSymbol(name, TEMP))
-      deleteTemp(name);
+    if ((pos = findSymbol(name, TEMP)) > -1)
+      deleteTemp(pos);
     addSymbol(name, VAR);
     VarAST->addVariable(name);
     Tokens->getNextToken(); // eat ident
@@ -268,8 +274,8 @@ std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
   }
   Tokens->getNextToken(); // eat ')'
 
-  // check duplicate
-  if (findSymbol(name, FUNC, true, parameters.size())) {
+  // check duplication of function
+  if (findSymbol(name, FUNC, true, parameters.size()) > -1) {
     fprintf(stderr, "visitFuncDecl: duplicate function %s\n", name.c_str());
     Tokens->applyTokenIndex(bkup);
     return nullptr;
@@ -279,10 +285,10 @@ std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
   blockIn();
 
   for (auto param : parameters) {
-    if (findSymbol(param, PARAM)) {
-      fprintf(stderr, "visitFuncDecl: duplicate param: %s\n", param.c_str());
-      Tokens->applyTokenIndex(bkup);
-      return nullptr;
+    if (findSymbol(param, PARAM) > -1) {
+          fprintf(stderr, "visitFuncDecl: duplicate param: %s\n", param.c_str());
+          Tokens->applyTokenIndex(bkup);
+          return nullptr;
     }
     addSymbol(param, PARAM);
   }
@@ -363,7 +369,7 @@ std::unique_ptr<BaseStmtAST> Parser::visitAssign() {
   std::string name;
 
   name = Tokens->getCurString();
-  if (!findSymbol(name, VAR) && !findSymbol(name, PARAM))
+  if (findSymbol(name, VAR) == -1 && findSymbol(name, PARAM) == -1)
     addSymbol(name, TEMP);
   Tokens->getNextToken(); // eat ident
   if (Tokens->getCurType() != TOK_ASSIGN) {
@@ -631,13 +637,11 @@ std::unique_ptr<BaseExpAST> Parser::visitFactor() {
     if (Tokens->isSymbol("(")) {
       return visitCall(name);
     }
-    if (!findSymbol(name, PARAM)
-    && !findSymbol(name, VAR, false, -1)
-    && !findSymbol(name, CONST, false, -1)
-    && !findSymbol(name, TEMP)) {
-      fprintf(stderr, "visitFactor: use undefine variable: %s\n", name.c_str());
-      Tokens->applyTokenIndex(bkup);
-      return nullptr;
+    if (findSymbol(name, PARAM) == -1
+    && findSymbol(name, VAR, false, -1) == -1
+    && findSymbol(name, CONST, false, -1) == -1
+    && findSymbol(name, TEMP, false, -1) == -1) {
+      addSymbol(name, TEMP);
     }
     return llvm::make_unique<VariableAST>(name);
   } else if (Tokens->getCurType() == TOK_DIGIT) {
@@ -692,7 +696,7 @@ std::unique_ptr<BaseExpAST> Parser::visitCall(const std::string &callee) {
     return nullptr;
   }
   Tokens->getNextToken(); // eat ')'
-  if (!findSymbol(callee, FUNC, false, call_expr->getNumOfArgs())) {
+  if (findSymbol(callee, FUNC, false, call_expr->getNumOfArgs())  == -1) {
     fprintf(stderr, "visitCall: call undefined function %s\n",
       callee.c_str());
     Tokens->applyTokenIndex(bkup);
@@ -708,36 +712,19 @@ void Parser::debug_check(const std::string method) {
 }
 
 void Parser::addSymbol(std::string name, NameType type, int num) {
-  int level = type == PARAM ? CurrentLevel + 1 : CurrentLevel;
-  SymbolTable.emplace_back(level, type, name, num);
+  SymbolTable.emplace_back(CurrentLevel, type, name, num);
   if (Debug)
-    fprintf(stderr, "[%d] add %s/%d(%d) at %d\n", Tokens->getLine(), name.c_str(), num > 0 ? num : 0, type, level);
+    fprintf(stderr, "[%d] add %s/%d (%d) at %d\n", Tokens->getLine(), name.c_str(), num, type, CurrentLevel);
 }
 
-void Parser::removeSymbolsOfCurrentLevel() {
-  if (CurrentLevel == 0) return;
-  for (int i = SymbolTable.size() - 1; i >= 0; i--)
-    if (SymbolTable[i].level == CurrentLevel && SymbolTable.size() > 0) {
-      auto e = SymbolTable.back();
-      if (e.type == FUNC && CurrentLevel == e.level + 1)
-        continue;
-      if (Debug) {
-        fprintf(stderr, "delete %s/%d(%d) at %d\n", e.name.c_str(), e.num > 0 ? e.num : 0, e.type, e.level);
-      }
-      SymbolTable.pop_back();
-    }
-
+void Parser::deleteTemp(int pos) {
+  SymbolTable.erase(SymbolTable.begin()+pos);
 }
 
-void Parser::deleteTemp(std::string name) {
-  for (int i = SymbolTable.size() - 1; i >= 0; i--) {
-    auto e = SymbolTable[i];
-    if (e.level == CurrentLevel && e.type == TEMP && e.name == name)
-      SymbolTable.erase(SymbolTable.begin()+i);
-  }
-}
-
-bool Parser::findSymbol(std::string name, NameType type, bool checkLevel, int num) {
+// SymbolTableから条件にあうTableEntryを探す
+//   見つかった場合は、その位置 (iterator)
+//   見つからなかった場合は -1
+int Parser::findSymbol(std::string name, NameType type, bool checkLevel, int num) {
   auto result = std::find_if(
     SymbolTable.crbegin(),
     SymbolTable.crend(),
@@ -748,8 +735,8 @@ bool Parser::findSymbol(std::string name, NameType type, bool checkLevel, int nu
       return cond;
     });
   if (result == SymbolTable.crend())
-    return false;
-  return true;
+    return -1;
+  return -(result - SymbolTable.crend() + 1);
 }
 
 // true if temps are remained
