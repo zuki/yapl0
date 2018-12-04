@@ -48,6 +48,12 @@ bool Parser::visitProgram() {
     return false;
   }
 
+  // 未定義の定数、変数、関数にアクセス
+  if (remainedTemp()) {
+    fprintf(stderr, "use undefined symbol\n");
+    return false;
+  }
+
   TheProgramAST =  llvm::make_unique<ProgramAST>(std::move(Block));
   return true;
 }
@@ -98,13 +104,6 @@ std::unique_ptr<BlockAST> Parser::visitBlock() {
     return nullptr;
   }
 
-  // 未定義の定数、変数、関数にアクセス
-  if (remainedTemp()) {
-    fprintf(stderr, "use undefined symbol\n");
-    return nullptr;
-  }
-  // このレベルの名前を削除
-  removeSymbolsOfCurrentLevel();
   // ブロック階層を下げる
   blockOut();
   return Block;
