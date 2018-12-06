@@ -1,4 +1,7 @@
 #include "parser.hpp"
+#include "log.hpp"
+#include <iostream>
+#include <sstream>
 
 /**
   * コンストラクタ
@@ -13,11 +16,21 @@ Parser::Parser(std::string filename, bool debug = true) {
   * @return 解析成功：true　解析失敗：false
   */
 bool Parser::doParse() {
+  std::stringstream ss;
   if (!Tokens) {
-    fprintf(stderr, "error at lexer\n");
+    Log::error("error at lexer: could not make Tokens");
     return false;
-  } else
-    return visitProgram();
+  }
+  bool result = visitProgram();
+  int num = Log::getErrorNum();
+  if (num >= 1) {
+    ss << num << " error";
+    if (num > 1)
+      ss << "s";
+    Log::error(ss.str());
+  }
+
+  return result && (num < MINERROR);
 }
 
 /**
@@ -34,28 +47,31 @@ std::unique_ptr<ProgramAST> Parser::getAST() {
   * @return 解析成功：true　解析失敗：false
   */
 bool Parser::visitProgram() {
-  debug_check("visitProgram");
+  bool result = true;
+
   // block
   blockIn();
   std::unique_ptr<BlockAST> Block = visitBlock();
   if (!Block || Block->empty()) {
-    fprintf(stderr, "error at visitBlock\n");
-    return false;
+    Log::error("error at visitBlock", false);
+    result = false;
+  } else {
+    TheProgramAST =  llvm::make_unique<ProgramAST>(std::move(Block));
   }
+
   // eat '.'
   if(!Tokens->isSymbol(".")) {
-    fprintf(stderr, "Program don's end with '.'\n");
-    return false;
+    Log::error("program done without '.': insert", Tokens->getToken());
   }
 
   // 未定義の定数、変数、関数にアクセス
   if (remainedTemp()) {
-    fprintf(stderr, "use undefined symbol\n");
-    return false;
+    Log::error("remain undefined symbols", false);
+    dumpTempNames();
+    result = false;
   }
 
-  TheProgramAST =  llvm::make_unique<ProgramAST>(std::move(Block));
-  return true;
+  return result;
 }
 
 // block: { constDecl | varDecl | funcDecl }, statement
@@ -66,42 +82,36 @@ bool Parser::visitProgram() {
   * @return true: 成功 false: 失敗
   */
 std::unique_ptr<BlockAST> Parser::visitBlock() {
-  debug_check("visitBlock");
-
   auto Block = llvm::make_unique<BlockAST>();
   while (true) {
     // std::moveするとuniq_ptrはnullになってしまうので
     // 別にフラグが必要
-    bool c = false, v = false, f = false;
-
-    auto const_decl = visitConstDecl();
-    if (const_decl) {
-      Block->setConstant(std::move(const_decl));
-      c = true;
-    }
-
-    auto var_decl = visitVarDecl();
-    if (var_decl) {
-      Block->setVariable(std::move(var_decl));
-      v = true;
-    }
-
-    auto func_decl = visitFuncDecl();
-    if (func_decl) {
-      Block->addFunction(std::move(func_decl));
-      f = true;
-    }
-
-    if (!c && !v && !f)
+    //bool c = false, v = false, f = false;
+    if (Tokens->getCurType() == TOK_CONST) {
+      Tokens->getNextToken(); // eat 'const'
+      auto const_decl = visitConstDecl();
+      if (const_decl)
+        Block->setConstant(std::move(const_decl));
+    } else if (Tokens->getCurType() == TOK_VAR) {
+      Tokens->getNextToken(); // eat 'var'
+      auto var_decl = visitVarDecl();
+      if (var_decl)
+        Block->setVariable(std::move(var_decl));
+    } else if (Tokens->getCurType() == TOK_FUNCTION) {
+      Tokens->getNextToken(); // eat 'function'
+      auto func_decl = visitFuncDecl();
+      if (func_decl)
+        Block->addFunction(std::move(func_decl));
+    } else {
       break;
+    }
   }
-
   auto statement = visitStatement();
   if (statement) {
     Block->setStatement(std::move(statement));
   } else {
-    fprintf(stderr, "No statement\n");
-    return nullptr;
+    Log::error("No statement", false);
+    Block = nullptr;
   }
 
   // ブロック階層を下げる
@@ -116,62 +126,44 @@ std::unique_ptr<BlockAST> Parser::visitBlock() {
   * @return 成功: std::unique_ptr<ConstDeclAST>, 失敗: nullptr
   */
 std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
-  debug_check("visitConstDecl");
   std::string name;
-  int pos;
+  std::size_t pos;
 
-  // TODO: 変数重複チェック
-  int bkup = Tokens->getCurIndex();
   auto ConstAST = llvm::make_unique<ConstDeclAST>();
 
-  if (Tokens->getCurType() != TOK_CONST)
-    return nullptr;
-
-  Tokens->getNextToken(); // eat 'const'
-  name = Tokens->getCurString();
-  Tokens->getNextToken();   // eat ident
-  if (!Tokens->isSymbol("=")) {
-    fprintf(stderr, "visitConstDecl: expected '=' but %s\n", Tokens->getCurString().c_str());
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
-  }
-  Tokens->getNextToken(); // eat '='
-  if (findSymbol(name, CONST) > -1) {
-    fprintf(stderr, "visitConstDecl: duplicate constant %s\n", name.c_str());
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
-  }
-  if ((pos = findSymbol(name, TEMP)) > -1)
-    deleteTemp(pos);
-  addSymbol(name, CONST);
-  ConstAST->addConstant(name, Tokens->getCurNumVal());
-  Tokens->getNextToken(); // eat number
-  while (Tokens->isSymbol(",")) {
+  while(true) {
+    if (Tokens->getCurType() != TOK_IDENTIFIER) {
+      Log::error("missing const name", Tokens->getToken());
+    } else {
+      name = Tokens->getCurString();
+      Tokens->getNextToken();   // eat ident
+      checkGet("=");
+      if (findSymbol(name, CONST) > -1)
+        Log::duplicateError("constant", name, Tokens->getToken());
+      else {
+        if ((pos = findTemp(name)) > -1) {
+          deleteTemp(pos);
+          Log::deleteWarn(name, Tokens->getToken());
+        }
+        addSymbol(name, CONST);
+      }
+      if (Tokens->getCurType() == TOK_DIGIT)
+        ConstAST->addConstant(name, Tokens->getCurNumVal());
+      else
+        Log::error("assigned not number", Tokens->getToken());
+      Tokens->getNextToken(); // eat number
+    }
+    if (!Tokens->isSymbol(",")) {
+      if (Tokens->getCurType() == TOK_IDENTIFIER) {
+        Log::missingError(",", Tokens->getToken());
+        continue;
+      } else {
+        break;
+      }
+    }
     Tokens->getNextToken(); // eat ','
-    name = Tokens->getCurString();
-    Tokens->getNextToken(); // eat ident
-    if (!Tokens->isSymbol("=")) {
-      fprintf(stderr, "visitConstDecl: expected '=' but %s\n", Tokens->getCurString().c_str());
-      Tokens->applyTokenIndex(bkup);
-      return nullptr;
-    }
-    Tokens->getNextToken(); // eat '='
-    if (findSymbol(name, CONST) > -1) {
-      fprintf(stderr, "visitConstDecl: duplicate constant %s\n", Tokens->getCurString().c_str());
-      Tokens->applyTokenIndex(bkup);
-      return nullptr;
-    }
-    if ((pos = findSymbol(name, TEMP)) > -1)
-      deleteTemp(pos);
-    addSymbol(name, CONST);
-    ConstAST->addConstant(name, Tokens->getCurNumVal());
-    Tokens->getNextToken(); // eat number
   }
-  if (!Tokens->isSymbol(";")) {
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
-  }
-  Tokens->getNextToken(); // eat ';'
+  checkGet(";");
 
   return ConstAST;
 }
@@ -182,50 +174,39 @@ std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
   * @return 成功: std::unique_ptr<VarDeclAST>, 失敗: nullptr
   */
 std::unique_ptr<VarDeclAST> Parser::visitVarDecl() {
-  debug_check("visitVarDecl");
   std::string name;
   int pos;
 
-  int bkup = Tokens->getCurIndex();
   auto VarAST = llvm::make_unique<VarDeclAST>();
 
-  if (Tokens->getCurType() != TOK_VAR)
-    return nullptr;
-
-  // eat 'var'
-  Tokens->getNextToken();
-  name = Tokens->getCurString();
-  if (findSymbol(name, VAR) > -1) {
-    fprintf(stderr, "visitVarDecl: duplicate variable %s\n", name.c_str());
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
-  }
-  if ((pos = findSymbol(name, TEMP)) > -1)
-    deleteTemp(pos);
-  addSymbol(name, VAR);
-  VarAST->addVariable(name);
-  // eat ident
-  Tokens->getNextToken();
-  while(Tokens->isSymbol(",")) {
-    Tokens->getNextToken(); // eat ','
-    name = Tokens->getCurString();
-    if (findSymbol(name, VAR) > -1) {
-      fprintf(stderr, "visitVarDecl: duplicate variable %s\n", name.c_str());
-      Tokens->applyTokenIndex(bkup);
-      return nullptr;
+  while(true) {
+    if (Tokens->getCurType() != TOK_IDENTIFIER) {
+      Log::error("missing var name", Tokens->getToken());
+    } else {
+      name = Tokens->getCurString();
+      if (findSymbol(name, VAR) > -1) {
+        Log::duplicateError("var", name, Tokens->getToken());
+      } else {
+        if ((pos = findTemp(name)) > -1) {
+          deleteTemp(pos);
+          Log::deleteWarn(name, Tokens->getToken());
+        }
+        addSymbol(name, VAR);
+        VarAST->addVariable(name);
+      }
+      Tokens->getNextToken();   // eat ident
     }
-    if ((pos = findSymbol(name, TEMP)) > -1)
-      deleteTemp(pos);
-    addSymbol(name, VAR);
-    VarAST->addVariable(name);
-    Tokens->getNextToken(); // eat ident
+    if (!Tokens->isSymbol(",")) {
+      if (Tokens->getCurType() == TOK_IDENTIFIER) {
+        Log::missingError(",", Tokens->getToken());
+        continue;
+      } else {
+        break;
+      }
+    }
+    Tokens->getNextToken(); // eat ','
   }
-  if (!Tokens->isSymbol(";")) {
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
-  }
-  // eat ';'
-  Tokens->getNextToken();
+  checkGet(";");
 
   return VarAST;
 }
@@ -236,75 +217,62 @@ std::unique_ptr<VarDeclAST> Parser::visitVarDecl() {
   * @return 成功: std::unique_ptr<FuncDeclAST>, 失敗: nullptr
   */
 std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
-  debug_check("visitFuncDecl");
-  int bkup = Tokens->getCurIndex();
-  std::string name;
+  std::string name, param;
   std::vector<std::string> parameters;
 
-  if (Tokens->getCurType() != TOK_FUNCTION)
-    return nullptr;
-
-  Tokens->getNextToken(); // eat 'function'
-  name = Tokens->getCurString();
-  Tokens->getNextToken(); // eat ident
-  if (!Tokens->isSymbol("(")) {
-    fprintf(stderr, "visitFuncDecl: expected '(' but %s\n", Tokens->getCurString().c_str());
-    Tokens->applyTokenIndex(bkup);
+  if (Tokens->getCurType() != TOK_IDENTIFIER) {
+    Log::error("missing function name", Tokens->getToken());
     return nullptr;
   }
-  Tokens->getNextToken(); // eat '('
-  bool is_first_param = true;
+
+  name = Tokens->getCurString();
+  auto temp = Tokens->getToken();
+  Tokens->getNextToken(); // eat ident
+  checkGet("(");
   while(true){
-    if (!is_first_param && Tokens->isSymbol(",")) {
-      Tokens->getNextToken(); // eat ','
-    }
     if (Tokens->getCurType() == TOK_IDENTIFIER) {
-      parameters.push_back(Tokens->getCurString());
+      param = Tokens->getCurString();
+      if (findSymbol(param, PARAM) > -1) {
+          Log::duplicateError("param", param.c_str(), Tokens->getToken());
+      } else {
+          parameters.push_back(param);
+      }
       Tokens->getNextToken(); // eat ident
     } else {
       break; // 最初に識別子が来なければparamtersは終了
     }
-    is_first_param = false;
+    if (!Tokens->isSymbol(",")) {
+      if (Tokens->getCurType() == TOK_IDENTIFIER) {
+        Log::missingError(",", Tokens->getToken());
+        continue;
+      } else {
+        break;
+      }
+    }
+    Tokens->getNextToken(); // eat ','
   }
-  if (!Tokens->isSymbol(")")) {
-    fprintf(stderr, "visitFuncDecl: expected ')' but %s\n", Tokens->getCurString().c_str());
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
+  checkGet(")");
+  if (Tokens->isSymbol(";")) {
+    Log::unexpectedError(";", Tokens->getToken());
+    Tokens->getNextToken(); // eat ';'
   }
-  Tokens->getNextToken(); // eat ')'
-
   // check duplication of function
   if (findSymbol(name, FUNC, true, parameters.size()) > -1) {
-    fprintf(stderr, "visitFuncDecl: duplicate function %s\n", name.c_str());
-    Tokens->applyTokenIndex(bkup);
+    Log::duplicateError("func", name.c_str(), temp);
     return nullptr;
   }
   addSymbol(name, FUNC, parameters.size());
   // ここからブロックレベルを上げる
   blockIn();
-
-  for (auto param : parameters) {
-    if (findSymbol(param, PARAM) > -1) {
-          fprintf(stderr, "visitFuncDecl: duplicate param: %s\n", param.c_str());
-          Tokens->applyTokenIndex(bkup);
-          return nullptr;
-    }
+  for (auto param : parameters)
     addSymbol(param, PARAM);
-  }
 
   auto block = visitBlock();
   if (!block) {
-    fprintf(stderr, "visitFuncDecl: error at block\n");
+    Log::error("error in function block");
     return nullptr;
   }
-
-  if (!Tokens->isSymbol(";")) {
-    fprintf(stderr, "visitFuncDecl: expected ';' but %s\n", Tokens->getCurString().c_str());
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
-  }
-  Tokens->getNextToken(); // eat ';'
-
+  checkGet(";");
   return llvm::make_unique<FuncDeclAST>(name, parameters, std::move(block));
 }
 
@@ -314,8 +282,6 @@ std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseStmtAST> Parser::visitStatement() {
-  debug_check("visitStatement");
-  int bkup = Tokens->getCurIndex();
   std::unique_ptr<BaseStmtAST> statement;
 
   switch (Tokens->getCurType()) {
@@ -346,11 +312,10 @@ std::unique_ptr<BaseStmtAST> Parser::visitStatement() {
         statement = llvm::make_unique<NullAST>();
       } else if (Tokens->isSymbol(";")) {
         statement = llvm::make_unique<NullAST>();
-          Tokens->getNextToken();
+        Tokens->getNextToken();
       } else {
-        fprintf(stderr, "visitStatement: unexpected token: %s\n", Tokens->getCurString().c_str());
-        Tokens->applyTokenIndex(bkup);
-        return nullptr;
+        Log::skipError(Tokens->getCurString().c_str(), Tokens->getToken());
+        Tokens->getNextToken();
       }
   }
 
@@ -363,24 +328,21 @@ std::unique_ptr<BaseStmtAST> Parser::visitStatement() {
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseStmtAST> Parser::visitAssign() {
-  debug_check("visitAssign");
-  int bkup = Tokens->getCurIndex();
   std::string name;
 
   name = Tokens->getCurString();
-  if (findSymbol(name, VAR) == -1 && findSymbol(name, PARAM) == -1)
+  if (findSymbol(name, FUNC, false, -1) > -1) {
+    Log::error("assign lhs is not var/par", Tokens->getToken());
+  } else if (findSymbol(name, VAR) == -1 && findSymbol(name, PARAM) == -1) {
     addSymbol(name, TEMP);
-  Tokens->getNextToken(); // eat ident
-  if (Tokens->getCurType() != TOK_ASSIGN) {
-    fprintf(stderr, "visitAssign: expect ':=', but %s\n", Tokens->getCurString().c_str());
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
+    Log::addWarn(name, Tokens->getToken());
   }
-  Tokens->getNextToken(); // eat ':='
+
+  Tokens->getNextToken(); // eat ident
+  checkGet(":=");
   auto rhs = visitExpression(nullptr);
   if (!rhs) {
-    fprintf(stderr, "visitAssign: error getting expression\n");
-    Tokens->applyTokenIndex(bkup);
+    Log::error("Couldn't get rhs-expr of assignment", Tokens->getToken());
     return nullptr;
   }
 
@@ -393,33 +355,33 @@ std::unique_ptr<BaseStmtAST> Parser::visitAssign() {
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseStmtAST> Parser::visitBeginEnd() {
-  debug_check("visitBeginEnd");
-  int bkup = Tokens->getCurIndex();
   std::unique_ptr<BaseStmtAST> statement;
   std::vector<std::unique_ptr<BaseStmtAST>> statements;
 
   Tokens->getNextToken(); // eat 'begin'
-  statement = visitStatement();
-  if (!statement) {
-    return nullptr;
-  }
-  statements.push_back(std::move(statement));
-  while (Tokens->isSymbol(";")) {
-    Tokens->getNextToken();  // eat ';'
+  while(true) {
     statement = visitStatement();
     if (!statement) {
       return nullptr;
     }
     statements.push_back(std::move(statement));
+    while(true) {
+      if (Tokens->isSymbol(";")) {
+        Tokens->getNextToken(); // eat ';'
+        break;
+      }
+      if (Tokens->getCurType() == TOK_END) {
+        Tokens->getNextToken(); // eat ';'
+        return llvm::make_unique<BeginEndAST>(std::move(statements));
+      }
+      if (isStmtBeginKey(Tokens->getCurString())) {
+        Log::missingError("';'", Tokens->getToken(), true);
+        break;
+      }
+      Log::skipError(Tokens->getCurString(), Tokens->getToken());
+      Tokens->getNextToken();
+    }
   }
-  if (Tokens->getCurType() != TOK_END) {
-    fprintf(stderr, "visitBeginEnd: expect 'end', but %s\n", Tokens->getCurString().c_str());
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
-  }
-  Tokens->getNextToken();  // eat 'end'
-
-  return llvm::make_unique<BeginEndAST>(std::move(statements));
 }
 
 // 'if' condition 'then' statement
@@ -428,22 +390,18 @@ std::unique_ptr<BaseStmtAST> Parser::visitBeginEnd() {
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseStmtAST> Parser::visitIfThen() {
-  debug_check("visitIfThen");
-  int bkup = Tokens->getCurIndex();
-
   Tokens->getNextToken(); // eat 'if'
+  auto temp = Tokens->getToken();
   auto condition = visitCondition();
   if (!condition) {
+    Log::error("Couldn't get condition of if condition", temp);
     return nullptr;
   }
-  if (Tokens->getCurType() != TOK_THEN) {
-    fprintf(stderr, "visitAssign: expect 'then', but %s\n", Tokens->getCurString().c_str());
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
-  }
-  Tokens->getNextToken(); // eat 'then'
+  checkGet("then");
+  auto temp2 = Tokens->getToken();
   auto statement = visitStatement();
   if (!statement) {
+    Log::error("Couldn't get statement of if then", temp2);
     return nullptr;
   }
   return llvm::make_unique<IfThenAST>(std::move(condition), std::move(statement));
@@ -455,22 +413,18 @@ std::unique_ptr<BaseStmtAST> Parser::visitIfThen() {
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseStmtAST> Parser::visitWhileDo() {
-  debug_check("visitWhileDo");
-  int bkup = Tokens->getCurIndex();
-
   Tokens->getNextToken(); // eat 'while'
+  auto temp = Tokens->getToken();
   auto condition = visitCondition();
   if (!condition) {
+    Log::error("Couldn't get condition of while condition", temp);
     return nullptr;
   }
-  if (Tokens->getCurType() != TOK_DO) {
-    fprintf(stderr, "visitAssign: expect 'do', but %s\n", Tokens->getCurString().c_str());
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
-  }
-  Tokens->getNextToken(); // eat 'do'
+  checkGet("do");
+  auto temp2 = Tokens->getToken();
   auto statement = visitStatement();
   if (!statement) {
+    Log::error("Couldn't get statement of while do", temp2);
     return nullptr;
   }
   return llvm::make_unique<WhileDoAST>(std::move(condition), std::move(statement));
@@ -482,11 +436,11 @@ std::unique_ptr<BaseStmtAST> Parser::visitWhileDo() {
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseStmtAST> Parser::visitReturn() {
-  debug_check("visitReturn");
-
   Tokens->getNextToken(); // eat 'return'
+  auto temp = Tokens->getToken();
   auto expression = visitExpression(nullptr);
   if (!expression) {
+    Log::error("Couldn't get expr of return", temp);
     return nullptr;
   }
   return llvm::make_unique<ReturnAST>(std::move(expression));
@@ -498,11 +452,11 @@ std::unique_ptr<BaseStmtAST> Parser::visitReturn() {
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseStmtAST> Parser::visitWrite() {
-  debug_check("visitWrite");
-
   Tokens->getNextToken(); // eat 'write'
+  auto temp = Tokens->getToken();
   auto expression = visitExpression(nullptr);
   if (!expression) {
+    Log::error("Couldn't get expr of write", temp);
     return nullptr;
   }
   return llvm::make_unique<WriteAST>(std::move(expression));
@@ -514,32 +468,34 @@ std::unique_ptr<BaseStmtAST> Parser::visitWrite() {
   * @return 成功: std::unique_ptr<BaseExpAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseExpAST> Parser::visitCondition() {
-  debug_check("visitCondition");
-  int bkup=Tokens->getCurIndex();
-
   if (Tokens->getCurType() == TOK_ODD) {
     Tokens->getNextToken(); // eat 'odd'
+    auto temp = Tokens->getToken();
     auto rhs = visitExpression(nullptr);
     if (!rhs) {
+      Log::error("Couldn't get odd expr of condition", temp);
       return nullptr;
     }
     return llvm::make_unique<CondExpAST>("odd", nullptr, std::move(rhs));
   }
 
+  auto temp2 = Tokens->getToken();
   auto lhs = visitExpression(nullptr);
   if (!lhs) {
+    Log::error("Couldn't get lhs expr of condition", temp2);
     return nullptr;
   }
   std::string op = Tokens->getCurString();
   if (!(op == "=" || op == "<>" || op == "<" ||
         op == ">" || op == "<=" || op == ">=")) {
-    fprintf(stderr, "visitCondition: unexpected token %s\n", Tokens->getCurString().c_str());
-    Tokens->applyTokenIndex(bkup);
+    Log::unexpectedError(Tokens->getCurString().c_str(), Tokens->getToken());
     return nullptr;
   }
   Tokens->getNextToken(); // eat Symbol
+  auto temp3 = Tokens->getToken();
   auto rhs = visitExpression(nullptr);
   if (!rhs) {
+    Log::error("Couldn't get lhs expr of condition", temp3);
     return nullptr;
   }
 
@@ -552,8 +508,6 @@ std::unique_ptr<BaseExpAST> Parser::visitCondition() {
   * @return 成功: std::unique_ptr<BaseExpAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseExpAST> Parser::visitExpression(std::unique_ptr<BaseExpAST> lhs) {
-  debug_check("visitExpression");
-  int bkup=Tokens->getCurIndex();
   std::string prefix = "";
   std::string op;
 
@@ -562,23 +516,23 @@ std::unique_ptr<BaseExpAST> Parser::visitExpression(std::unique_ptr<BaseExpAST> 
     Tokens->getNextToken();  // eat prefix
   }
 
+  auto temp = Tokens->getToken();
   if (!lhs)
     lhs = visitTerm(nullptr);
   if (!lhs) {
-    fprintf(stderr, "visitExpression: no lhs expression\n");
-    Tokens->applyTokenIndex(bkup);
+    Log::error("Couldn't get lhs expr of expression", temp);
     return nullptr;
   }
 
   if (Tokens->isSymbol("+") || Tokens->isSymbol("-")) {
     op = Tokens->getCurString();
     Tokens->getNextToken(); // eat '+' of '-'
+    auto temp2 = Tokens->getToken();
     auto rhs = visitTerm(nullptr);
     if (rhs) {
       return visitExpression(llvm::make_unique<BinaryExprAST>(op, std::move(lhs), std::move(rhs), prefix));
     } else {
-      fprintf(stderr, "visitExpression: no rhs expression\n");
-      Tokens->applyTokenIndex(bkup);
+      Log::error("Couldn't get rhs expr of expression", temp2);
       return nullptr;
     }
   }
@@ -592,26 +546,25 @@ std::unique_ptr<BaseExpAST> Parser::visitExpression(std::unique_ptr<BaseExpAST> 
   * @return 成功: std::unique_ptr<BaseExpAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseExpAST> Parser::visitTerm(std::unique_ptr<BaseExpAST> lhs) {
-  debug_check("visitTerm");
-  int bkup=Tokens->getCurIndex();
   std::string op;
 
+  auto temp = Tokens->getToken();
   if (!lhs)
     lhs = visitFactor();
   if (!lhs) {
-    fprintf(stderr, "visitTerm: no lhs expression\n");
+    Log::error("Couldn't get lhs expr of term", temp);
     return nullptr;
   }
 
   if (Tokens->isSymbol("*") || Tokens->isSymbol("/")) {
     op = Tokens->getCurString();
     Tokens->getNextToken(); // eat '*' or '/'
+    auto temp2 = Tokens->getToken();
     auto rhs = visitFactor();
     if (rhs) {
       return visitTerm(llvm::make_unique<BinaryExprAST>(op, std::move(lhs), std::move(rhs)));
     } else {
-      fprintf(stderr, "visitTerm: no rhs expression\n");
-      Tokens->applyTokenIndex(bkup);
+      Log::error("Couldn't get rhs expr of term", temp2);
       return nullptr;
     }
   }
@@ -626,45 +579,47 @@ std::unique_ptr<BaseExpAST> Parser::visitTerm(std::unique_ptr<BaseExpAST> lhs) {
   * @return 成功: std::unique_ptr<BaseExpAST>, 失敗: nullptr
   */
 std::unique_ptr<BaseExpAST> Parser::visitFactor() {
-  debug_check("visitFactor");
-  int bkup=Tokens->getCurIndex();
-
   // identifier: 定義済み変数
+  std::unique_ptr<BaseExpAST> baseAST;
   if (Tokens->getCurType() == TOK_IDENTIFIER) {
     std::string name = Tokens->getCurString();
+    auto temp = Tokens->getToken();
     Tokens->getNextToken(); // eat ident
-    if (Tokens->isSymbol("(")) {
-      return visitCall(name);
+    if (findSymbol(name, FUNC, false, -1) != -1) {
+      baseAST = visitCall(name, temp);
+    } else {
+      if (findSymbol(name, PARAM) == -1
+      && findSymbol(name, VAR, false, -1) == -1
+      && findSymbol(name, CONST, false, -1) == -1
+      && findTemp(name) == -1) {
+        addTemp(name);
+        Log::addWarn(name, Tokens->getToken());
+      }
+      baseAST = llvm::make_unique<VariableAST>(name);
     }
-    if (findSymbol(name, PARAM) == -1
-    && findSymbol(name, VAR, false, -1) == -1
-    && findSymbol(name, CONST, false, -1) == -1
-    && findSymbol(name, TEMP, false, -1) == -1) {
-      addSymbol(name, TEMP);
-    }
-    return llvm::make_unique<VariableAST>(name);
   } else if (Tokens->getCurType() == TOK_DIGIT) {
     int val=Tokens->getCurNumVal();
     Tokens->getNextToken(); // eat digit
-    return llvm::make_unique<NumberAST>(val);
+    baseAST = llvm::make_unique<NumberAST>(val);
   } else if (Tokens->isSymbol("(")) {
     Tokens->getNextToken(); // eat '('
+    auto temp = Tokens->getToken();
     auto expr = visitExpression(nullptr);
     if (!expr) {
-      fprintf(stderr, "visitFactor: no expression in paren\n");
-      Tokens->applyTokenIndex(bkup);
+      Log::error("Couldn't get expr of paren", temp);
       return nullptr;
     }
-    if(!Tokens->isSymbol(")")) {
-      fprintf(stderr, "visitFactor: expect ')' but %s\n",
-        Tokens->getCurString().c_str());
-      Tokens->applyTokenIndex(bkup);
-      return nullptr;
-    }
-    Tokens->getNextToken(); // eat ')'
-    return expr;
+    checkGet(")");
+    baseAST = std::move(expr);
+  } else {
+    baseAST = nullptr;
   }
-  return nullptr;
+  if (Tokens->getCurType() == TOK_IDENTIFIER || Tokens->getCurType() == TOK_DIGIT) {
+    Log::duplicateFactorError(Tokens->getCurString(), Tokens->getToken());
+  } if (Tokens->isSymbol("(")) {
+    Log::error("factor + '(': missing opcode", Tokens->getToken());
+  }
+  return baseAST;
 }
 
 // factor: ident '(' expression ')' |
@@ -672,10 +627,7 @@ std::unique_ptr<BaseExpAST> Parser::visitFactor() {
   * Factor(関数呼び出し)用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseExpAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseExpAST> Parser::visitCall(const std::string &callee) {
-  debug_check("visitCall");
-  int bkup=Tokens->getCurIndex();
-
+std::unique_ptr<BaseExpAST> Parser::visitCall(const std::string &callee, Token token) {
   auto call_expr = llvm::make_unique<CallExprAST>(callee);
   Tokens->getNextToken(); // eat '('
   auto arg = visitExpression(nullptr);
@@ -688,48 +640,44 @@ std::unique_ptr<BaseExpAST> Parser::visitCall(const std::string &callee) {
       arg = visitExpression(nullptr);
     }
   }
-  if (!Tokens->isSymbol(")")) {
-    fprintf(stderr, "visitCall: expect ')' but %s\n",
-      Tokens->getCurString().c_str());
-    Tokens->applyTokenIndex(bkup);
-    return nullptr;
-  }
-  Tokens->getNextToken(); // eat ')'
+  checkGet(")");
+
   if (findSymbol(callee, FUNC, false, call_expr->getNumOfArgs())  == -1) {
-    fprintf(stderr, "visitCall: call undefined function %s\n",
-      callee.c_str());
-    Tokens->applyTokenIndex(bkup);
+    Log::undefinedFuncError(callee, call_expr->getNumOfArgs(), token);
     return nullptr;
   }
   return call_expr;
 }
 
-void Parser::debug_check(const std::string method) {
-  if (!Debug) return;
-  //fprintf(stderr, "(%d) %s in, token: %s\n", getLevel(), method.c_str(), Tokens->getCurString().c_str());
-  //fprintf(stderr, "%s in, token: %s\n", method.c_str(), Tokens->getCurString().c_str());
-}
-
 void Parser::addSymbol(std::string name, NameType type, int num) {
   SymbolTable.emplace_back(CurrentLevel, type, name, num);
-  if (Debug)
-    fprintf(stderr, "[%d] add %s/%d (%d) at %d\n", Tokens->getLine(), name.c_str(), num, type, CurrentLevel);
+}
+
+void Parser::addTemp(std::string name) {
+  TempNames.push_back(name);
 }
 
 void Parser::deleteTemp(int pos) {
-  SymbolTable.erase(SymbolTable.begin()+pos);
+  TempNames.erase(TempNames.begin()+pos);
+}
+
+int Parser::findTemp(const std::string &name) {
+  auto it = std::find(TempNames.cbegin(), TempNames.cend(), name);
+  if (it == TempNames.cend())
+    return -1;
+  return (int)std::distance(TempNames.cbegin(), it);
 }
 
 // SymbolTableから条件にあうTableEntryを探す
 //   見つかった場合は、その位置 (iterator)
 //   見つからなかった場合は -1
-int Parser::findSymbol(std::string name, NameType type, bool checkLevel, int num) {
+int Parser::findSymbol(const std::string &name, const NameType &type, const bool &checkLevel, const int &num) {
   auto result = std::find_if(
     SymbolTable.crbegin(),
     SymbolTable.crend(),
     [&](const TableEntry &e) {
       auto cond = e.name == name && e.type == type;
-      if (num != 1) cond = cond && e.num == num;
+      if (num != -1) cond = cond && e.num == num;
       if (checkLevel) cond = cond && e.level == CurrentLevel;
       return cond;
     });
@@ -740,11 +688,80 @@ int Parser::findSymbol(std::string name, NameType type, bool checkLevel, int num
 
 // true if temps are remained
 bool Parser::remainedTemp() {
-  auto result = std::find_if(
-    SymbolTable.crbegin(),
-    SymbolTable.crend(),
-    [&](const TableEntry &e) {
-      return e.level == CurrentLevel && e.type == TEMP;
-    });
-  return result == SymbolTable.crend() ? false : true;
+  return TempNames.size() > 0;
+}
+
+bool Parser::isKeyWord(std::string &name) {
+  std::vector<std::string> keywords = {
+    "begin", "end", "if", "then", "while", "do", "return",
+    "function", "var", "const", "odd", "write", "writeln"
+  };
+  auto result = std::find(keywords.begin(), keywords.end(), name);
+  if (result == keywords.end())
+    return false;
+  return true;
+}
+
+bool Parser::isSymbol(std::string &name) {
+  std::vector<std::string> symbols = {
+    "<", "<>", "<=", ">", ">=", "*", "/",
+    "+", "-", ";", ",", ".", "=", "(", ")", ":="
+  };
+  auto result = std::find(symbols.begin(), symbols.end(), name);
+  if (result == symbols.end())
+    return false;
+  return true;
+}
+
+bool Parser::isKeyWordType(int type) {
+  return TOK_CONST <= type && type <= TOK_ODD;
+}
+
+void Parser::checkGet(std::string symbol) {
+  //check("in checkGet");
+  //fprintf(stderr, "symbol: %s\n", symbol.c_str());
+  if (Tokens->getCurString() == symbol) {
+    Tokens->getNextToken();
+    return;
+  }
+  if ((isKeyWord(symbol) && isKeyWordType(Tokens->getCurType())) ||
+        (isSymbol(symbol) && (Tokens->getCurType() == TOK_SYMBOL))) {
+    Log::unexpectedError(Tokens->getCurString(), Tokens->getToken());
+    Log::missingError(symbol, Tokens->getToken());
+    Tokens->getNextToken();
+  } else {
+    auto token = Tokens->getToken();
+    Log::missingError(symbol, Tokens->getToken(), true);
+  }
+}
+
+void Parser::check(const std::string &caller) {
+  std::string type_name[] = {
+    "ident", "number", "symbol", "kw", "kw", "kw", "kw", "kw", "kw",
+    "kw", "kw", "kw", "kw", "kw", "kw", "kw", "eof"
+  };
+  fprintf(stderr, "%s: name: %s, type: %s\n", caller.c_str(), Tokens->getCurString().c_str(), type_name[Tokens->getCurType()].c_str());
+}
+
+bool Parser::isStmtBeginKey(const std::string &name) {
+  std::vector<std::string> words = {
+    "begin", "if", "while", "return", "write", "writeln"
+  };
+  auto result = std::find(words.begin(), words.end(), name);
+  if (result == words.end())
+    return false;
+  return true;
+}
+
+void Parser::dumpNameTable() {
+  std::string type_name[] = { "CONST", "VAR", "PARAM", "FUNC", "TEMP" };
+  for (const TableEntry &e : SymbolTable)
+    fprintf(stderr, "[%d] %-10s %s\n", e.level, e.name.c_str(), type_name[e.type].c_str());
+}
+
+void Parser::dumpTempNames() {
+  fprintf(stderr, "remain symbols:");
+  for (const std::string &name : TempNames)
+    fprintf(stderr, " %s", name.c_str());
+  fprintf(stderr, "\n");
 }

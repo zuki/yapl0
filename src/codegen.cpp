@@ -15,6 +15,7 @@
 #include "ast.hpp"
 #include "table.hpp"
 #include "codegen.hpp"
+#include "log.hpp"
 
 CodeGen::~CodeGen(){}
 
@@ -119,7 +120,8 @@ void CodeGen::statementAssign(std::unique_ptr<AssignAST> stmt_ast) {
   if (info.type == IdType::VAR) {
     assignee = info.val;
   } else {
-    error("variable is expected but it is not variable");
+    Log::error("variable is expected but it is not variable");
+    return;
   }
   TheBuilder.CreateStore(expression(stmt_ast->getRHS()), assignee);
 }
@@ -177,7 +179,7 @@ llvm::CmpInst::Predicate CodeGen::token_to_inst(std::string op) {
   else if (op == ">=")
     return llvm::CmpInst::Predicate::ICMP_SGE;
   else
-    error("not support at token to inst");
+    Log::error("not support at token to inst");
   return llvm::CmpInst::Predicate::FCMP_FALSE;
 }
 
@@ -231,7 +233,8 @@ llvm::Value *CodeGen::callExp(std::unique_ptr<CallExprAST> exp_ast) {
     args.push_back(expression(exp_ast->getArgs(i)));
   }
   if (args.size() != val.func->arg_size()) {
-    error("argument number is wrong");
+    Log::error("argument number is wrong");
+    return nullptr;
   }
   return TheBuilder.CreateCall(val.func, args);
 

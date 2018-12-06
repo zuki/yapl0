@@ -2,12 +2,13 @@
 #define PARSER_HPP
 
 #include "llvm/ADT/STLExtras.h"
-#include<algorithm>
-#include<cstdio>
-#include<cstdlib>
-#include<map>
-#include<string>
-#include<vector>
+#include <algorithm>
+#include <cstdio>
+#include <cstdlib>
+#include <iterator>
+#include <map>
+#include <string>
+#include <vector>
 #include"ast.hpp"
 #include"lexer.hpp"
 //using namespace llvm;
@@ -37,6 +38,7 @@ typedef struct TableEntry {
   */
 typedef class Parser{
 private:
+  static const int MINERROR = 30;
   int CurrentLevel = -1;
   bool Debug;
   std::unique_ptr<TokenStream> Tokens;
@@ -44,6 +46,7 @@ private:
 
   //意味解析用各種識別子表
   std::vector<TableEntry> SymbolTable;      // 名前シンボルテーブル
+  std::vector<std::string> TempNames;       // 一時的な名前テーブル
 
 public:
   Parser(std::string filename, bool debug);
@@ -78,19 +81,28 @@ private:
   std::unique_ptr<BaseExpAST> visitExpression(std::unique_ptr<BaseExpAST> lhs);
   std::unique_ptr<BaseExpAST> visitTerm(std::unique_ptr<BaseExpAST> lhs);
   std::unique_ptr<BaseExpAST> visitFactor();
-  std::unique_ptr<BaseExpAST> visitCall(const std::string &name);
-  void debug_check(const std::string method);
+  std::unique_ptr<BaseExpAST> visitCall(const std::string &name, Token token);
+  void checkGet(std::string symbol);
+  void check(const std::string &caller);
+  bool isKeyWord(std::string &name);
+  bool isSymbol(std::string &name);
+  bool isKeyWordType(int type);
+  bool isStmtBeginKey(const std::string &name);
   void addSymbol(std::string name, NameType type, int num);
   void addSymbol(std::string name, NameType type) {
     addSymbol(name, type, -1);
   }
-  void deleteTemp(int pos);
-  int findSymbol(std::string name, NameType type, bool checkLevel, int num);
-  int findSymbol(std::string name, NameType type) {
+  int findSymbol(const std::string &name, const NameType &type, const bool &checkLevel, const int &num);
+  int findSymbol(const std::string &name, const NameType &type) {
     return findSymbol(name, type, true, -1);
   }
+  void addTemp(std::string name);
+  void deleteTemp(int pos);
+  int findTemp(const std::string &name);
   bool remainedTemp();
   int getLevel() { return CurrentLevel; }
+  void dumpNameTable();
+  void dumpTempNames();
 } Parser;
 
 #endif

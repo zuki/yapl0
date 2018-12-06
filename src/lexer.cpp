@@ -1,5 +1,7 @@
 #include "lexer.hpp"
 #include <iostream>
+#include "log.hpp"
+
 /**
  * トークン切り出し関数
  * @param 字句解析対象ファイル名
@@ -12,6 +14,7 @@ std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename) {
   std::string token_str;
   int line_num = 1;
   bool iscomment = false;
+  Token *prev = nullptr;
 
   ifs.open(input_filename.c_str(), std::ios::in);
   if (!ifs)
@@ -20,18 +23,18 @@ std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename) {
   while (ifs && getline(ifs, cur_line)) {
     char next_char;
     std::string line;
-    std::unique_ptr<Token> next_token;
+    Token next_token;
     int index = 0;
     int length = cur_line.length();
-    bool last_char = 0;
+    bool last_char = false;
 
     while(index < length) {
       next_char = cur_line.at(index++);
       //fprintf(stderr, "char: %c, index: %d, length: %d\n", next_char, index, length);
 
-      //コメントアウト読み飛ばし {* コメント *}
+      //コメントアウト読み飛ばし { コメント }
       if (iscomment) {
-        if (index < length  && next_char == '*' && cur_line.at(index++) == '}')
+        if (index < length  && next_char == '}')
           iscomment = false;
         continue;
       }
@@ -39,7 +42,7 @@ std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename) {
       //EOF
       if (next_char == EOF) {
         token_str = EOF;
-        next_token = llvm::make_unique<Token>(TOK_EOF, token_str, line_num);
+        next_token = Token(TOK_EOF, token_str, line_num, index, prev);
       } else if (isspace(next_char)){
         continue;
       //IDENTIFIER
@@ -59,73 +62,69 @@ std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename) {
             index--;
         }
         if (token_str == "const")
-          next_token = llvm::make_unique<Token>(TOK_CONST, token_str, line_num);
+          next_token = Token(TOK_CONST, token_str, line_num, index, prev);
         else if (token_str == "var")
-          next_token = llvm::make_unique<Token>(TOK_VAR, token_str, line_num);
+          next_token = Token(TOK_VAR, token_str, line_num, index, prev);
         else if (token_str == "function")
-          next_token = llvm::make_unique<Token>(TOK_FUNCTION, token_str, line_num);
+          next_token = Token(TOK_FUNCTION, token_str, line_num, index, prev);
         else if (token_str == "begin")
-          next_token = llvm::make_unique<Token>(TOK_BEGIN, token_str, line_num);
+          next_token = Token(TOK_BEGIN, token_str, line_num, index, prev);
         else if (token_str == "end")
-          next_token = llvm::make_unique<Token>(TOK_END, token_str, line_num);
+          next_token = Token(TOK_END, token_str, line_num, index, prev);
         else if (token_str == "if")
-          next_token = llvm::make_unique<Token>(TOK_IF, token_str, line_num);
+          next_token = Token(TOK_IF, token_str, line_num, index, prev);
         else if (token_str == "then")
-          next_token = llvm::make_unique<Token>(TOK_THEN, token_str, line_num);
+          next_token = Token(TOK_THEN, token_str, line_num, index, prev);
         else if (token_str == "while")
-          next_token = llvm::make_unique<Token>(TOK_WHILE, token_str, line_num);
+          next_token = Token(TOK_WHILE, token_str, line_num, index, prev);
         else if (token_str == "do")
-          next_token = llvm::make_unique<Token>(TOK_DO, token_str, line_num);
+          next_token = Token(TOK_DO, token_str, line_num, index, prev);
         else if (token_str == "return")
-          next_token = llvm::make_unique<Token>(TOK_RETURN, token_str, line_num);
+          next_token = Token(TOK_RETURN, token_str, line_num, index, prev);
         else if (token_str == "write")
-          next_token = llvm::make_unique<Token>(TOK_WRITE, token_str, line_num);
+          next_token = Token(TOK_WRITE, token_str, line_num, index, prev);
         else if (token_str == "writeln")
-          next_token = llvm::make_unique<Token>(TOK_WRITELN, token_str, line_num);
+          next_token = Token(TOK_WRITELN, token_str, line_num, index, prev);
         else if (token_str == "odd")
-          next_token = llvm::make_unique<Token>(TOK_ODD, token_str, line_num);
+          next_token = Token(TOK_ODD, token_str, line_num, index, prev);
         else
-          next_token = llvm::make_unique<Token>(TOK_IDENTIFIER, token_str, line_num);
+          next_token = Token(TOK_IDENTIFIER, token_str, line_num, index, prev);
       //数字
       } else if (isdigit(next_char)) {
         if (next_char=='0') {
           token_str += next_char;
-          next_token = llvm::make_unique<Token>(TOK_DIGIT, token_str, line_num);
+          next_token = Token(TOK_DIGIT, token_str, line_num, index, prev);
         } else {
           token_str += next_char;
           if (index < length) {
             next_char = cur_line.at(index++);
             while (isdigit(next_char)) {
               token_str += next_char;
+              if (index == length) {
+                last_char = true;
+                break;
+              }
               next_char = cur_line.at(index++);
             }
-            index--;
+            if (!last_char)
+              index--;
           }
-          next_token = llvm::make_unique<Token>(TOK_DIGIT, token_str, line_num);
+          next_token = Token(TOK_DIGIT, token_str, line_num, index, prev);
         }
-      // コメント {* コメント *}
+      // コメント { コメント }
       } else if (next_char == '{') {
         token_str += next_char;
         next_char = cur_line.at(index++);
-        //コメントの場合
-        if (next_char == '*') {
-          iscomment = true;
-          continue;
-        } else {
-          fprintf(stderr, "unclear token : {");
-          return nullptr;
-        }
+        iscomment = true;
+        continue;
       //それ以外(記号)
       } else if (next_char == ':') {
         token_str += next_char;
         next_char = cur_line.at(index++);
-        if (next_char == '=') {
-          token_str += next_char;
-          next_token = llvm::make_unique<Token>(TOK_ASSIGN, token_str, line_num);
-        } else {
-          fprintf(stderr, "unclear token : {");
-          return nullptr;
-        }
+        if (next_char != '=')
+          Log::unexpectedError("=", {next_char}, Tokens->getToken());
+        token_str += next_char;
+        next_token = Token(TOK_SYMBOL, token_str, line_num, index, prev);
       } else if (next_char == '<') {
         token_str += next_char;
         next_char = cur_line.at(index++);
@@ -133,7 +132,7 @@ std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename) {
           token_str += next_char;
         else
           index--;
-        next_token = llvm::make_unique<Token>(TOK_SYMBOL, token_str, line_num);
+        next_token = Token(TOK_SYMBOL, token_str, line_num, index, prev);
       } else if (next_char == '>') {
         token_str += next_char;
         next_char = cur_line.at(index++);
@@ -141,7 +140,7 @@ std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename) {
           token_str += next_char;
         else
           index--;
-        next_token = llvm::make_unique<Token>(TOK_SYMBOL, token_str, line_num);
+        next_token = Token(TOK_SYMBOL, token_str, line_num, index, prev);
       } else {
         if (next_char == '*' ||
             next_char == '+' ||
@@ -154,29 +153,29 @@ std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename) {
             next_char == '(' ||
             next_char == ')') {
           token_str += next_char;
-          next_token = llvm::make_unique<Token>(TOK_SYMBOL, token_str, line_num);
+          next_token = Token(TOK_SYMBOL, token_str, line_num, index, prev);
         //解析不能字句
         } else {
-          fprintf(stderr, "unclear token : %c", next_char);
-          return nullptr;
+          Log::unexpectedError({next_char}, Tokens->getToken());
         }
       }
 
       //Tokensに追加
-      Tokens->pushToken(std::move(next_token));
+      Tokens->pushToken(next_token);
+      prev = Tokens->getLastToken();
       token_str.clear();
-      last_char = false;
     }
 
     token_str.clear();
     line_num++;
+    last_char = false;
   }
 
 
   //EOFの確認
   if (ifs.eof()) {
     Tokens->pushToken(
-        llvm::make_unique<Token>(TOK_EOF, token_str, line_num)
+        Token(TOK_EOF, token_str, line_num, -1, prev)
         );
   }
 
@@ -200,9 +199,8 @@ TokenStream::~TokenStream() {
   * @return CureIndex番目のToken
   */
 Token TokenStream::getToken() {
-  return *Tokens[CurIndex];
+  return Tokens[CurIndex];
 }
-
 
 /**
   * インデックスを一つ増やして次のトークンに進める
@@ -240,12 +238,8 @@ bool TokenStream::ungetToken(int times) {
   * 格納されたトークン一覧を表示する
   */
 bool TokenStream::printTokens() {
-  std::vector<std::unique_ptr<Token>>::iterator titer = Tokens.begin();
-  while( titer != Tokens.end() ){
-    fprintf(stdout,"%d:", (*titer)->getTokenType());
-    if ((*titer)->getTokenType() != TOK_EOF)
-      fprintf(stdout,"%s\n", (*titer)->getTokenString().c_str());
-    ++titer;
+  for(size_t i = 0; i < Tokens.size(); i++) {
+    Log::token(Tokens[i]);
   }
   return true;
 }

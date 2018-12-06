@@ -21,12 +21,15 @@
 #include "ast.hpp"
 #include "parser.hpp"
 #include "codegen.hpp"
-#include "error.hpp"
+#include "log.hpp"
 
 llvm::cl::opt<bool> debug("d", llvm::cl::desc("Enable debug"));
 llvm::cl::opt<bool> output_lexer("l", llvm::cl::desc("Output token list"));
+llvm::cl::opt<bool> syntax("c", llvm::cl::desc("Syntax check only"));
 llvm::cl::opt<bool> output_llvm_as("a", llvm::cl::desc("Output llvm-as code"));
 llvm::cl::opt<std::string> InputFileName(llvm::cl::Positional, llvm::cl::desc("<input file>"), llvm::cl::Required);
+
+int Log::error_num = 0;
 
 /**
  * main関数
@@ -36,17 +39,20 @@ int main(int argc, char **argv) {
 
   if (output_lexer) {
     auto Tokens = LexicalAnalysis(InputFileName);
-
     if (Tokens)
       Tokens->printTokens();
-
     exit(1);
   }
 
   auto TheParser = llvm::make_unique<Parser>(InputFileName, debug);
   if (!TheParser->doParse()) {
-    fprintf(stderr, "err at parser or lexer\n");
     exit(1);
+  } else {
+    fprintf(stderr, "parse ok\n");
+  }
+
+  if (syntax) {
+    exit(0);
   }
 
   //get AST
@@ -80,7 +86,7 @@ int main(int argc, char **argv) {
   std::string err;
   auto target = llvm::TargetRegistry::lookupTarget(triple, err);
   if (!target)
-    error(err.c_str());
+    Log::error(err.c_str(), true);
 
   auto cpu = "generic";
   auto features = "";
@@ -96,7 +102,7 @@ int main(int argc, char **argv) {
   std::error_code err_code;
   llvm::raw_fd_ostream dest(prog_name, err_code, llvm::sys::fs::F_None);
   if (err_code) {
-    error(("Could not open output file: " + err_code.message()).c_str());
+    Log::error(("Could not open output file: " + err_code.message()).c_str(), true);
   }
 
   auto ThePM = llvm::legacy::PassManager();
@@ -109,7 +115,7 @@ int main(int argc, char **argv) {
 
   auto file_type = llvm::TargetMachine::CGFT_ObjectFile;
   if (machine->addPassesToEmitFile(ThePM, dest, nullptr, file_type))
-    error("TheTargetMachine can't emit a file of this type");
+    Log::error("TheTargetMachine can't emit a file of this type", true);
   ThePM.run(*TheModule);
   dest.flush();
 

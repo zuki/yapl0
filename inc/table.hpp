@@ -1,7 +1,8 @@
-#pragma once
+#ifndef TABLE_HPP
+#define TABLE_HPP
 
-#include "error.hpp"
-#include <cassert>
+
+#include "log.hpp"
 #include <llvm/IR/Function.h>
 #include <llvm/IR/Value.h>
 #include <vector>
@@ -34,7 +35,7 @@ public:
         std::find_if(infos.rbegin(), infos.rend(),
                      [&](const IdInfo &info) { return info.name == name; });
     if (itr == infos.rend()) {
-      undefinedError(name);
+      Log::error((name +" is undefined").c_str(), true);
     }
 
     return *itr;
@@ -76,3 +77,5 @@ private:
   std::vector<IdInfo> infos;
   int cur_level = -1;
 };
+
+#endif

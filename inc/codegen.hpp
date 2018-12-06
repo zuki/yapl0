@@ -1,4 +1,6 @@
-#pragma once
+#ifndef CODEGEN_HPP
+#define CODEGEN_HPP
+
 
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/BasicBlock.h>
@@ -10,7 +12,6 @@
 #include <llvm/IR/Value.h>
 #include "table.hpp"
 #include "ast.hpp"
-#include "error.hpp"
 
 class CodeGen {
 public:
@@ -57,3 +58,5 @@ private:
   llvm::Function *writelnFunc;
   Table ident_table;
 };
+
+#endif

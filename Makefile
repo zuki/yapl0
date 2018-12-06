@@ -1,5 +1,5 @@
 CC = clang++
-LINK = g++
+LINK = clang++
 PROJECT_DIR = .
 SRC_DIR = $(PROJECT_DIR)/src
 INC_DIR = $(PROJECT_DIR)/inc
@@ -26,6 +26,7 @@ AST_INC = $(INC_DIR)/$(AST_SRC:.cpp=.hpp)
 PARSER_INC = $(INC_DIR)/$(PARSER_SRC:.cpp=.hpp)
 CODEGEN_INC = $(INC_DIR)/$(CODEGEN_SRC:.cpp=.hpp)
 TABLE_INC = $(INC_DIR)/table.hpp
+LOG_INC = $(INC_DIR)/log.hpp
 
 MAIN_OBJ = $(OBJ_DIR)/$(MAIN_SRC:.cpp=.o)
 LEXER_OBJ = $(OBJ_DIR)/$(LEXER_SRC:.cpp=.o)
@@ -38,26 +39,26 @@ TOOL = $(BIN_DIR)/pl0
 CONFIG = llvm-config
 LLVM_FLAGS = --ldflags --system-libs --libs all
 LLVM_COMPILE_FLAGS = --cxxflags
-INC_FLAGS = -I$(INC_DIR)
+INC_FLAGS = -I$(INC_DIR)/
 
 all:$(FRONT_OBJ)
 	mkdir -p $(BIN_DIR)
-	$(LINK) -g $(FRONT_OBJ) $(INC_FLAGS) `$(CONFIG) $(LLVM_FLAGS)` -lpthread -ldl -lm -rdynamic -o $(TOOL)
+	$(LINK) -g -O0 $(FRONT_OBJ) $(INC_FLAGS) `$(CONFIG) $(LLVM_FLAGS)` -lpthread -ldl -lm -rdynamic -o $(TOOL)
 
-$(MAIN_OBJ):$(MAIN_SRC_PATH)
+$(MAIN_OBJ):$(MAIN_SRC_PATH) $(LOG_INC)
 	mkdir -p $(OBJ_DIR)
 	$(CC) -g $(MAIN_SRC_PATH) $(INC_FLAGS) `$(CONFIG) $(LLVM_COMPILE_FLAGS)` -c -o $(MAIN_OBJ)
 
-$(LEXER_OBJ):$(LEXER_SRC_PATH) $(LEXER_INC)
+$(LEXER_OBJ):$(LEXER_SRC_PATH) $(LEXER_INC) $(LOG_INC)
 	$(CC) -g $(LEXER_SRC_PATH) $(INC_FLAGS) `$(CONFIG) $(LLVM_COMPILE_FLAGS)` -c -o $(LEXER_OBJ)
 
 $(AST_OBJ):$(AST_SRC_PATH) $(AST_INC)
 	$(CC) -g $(AST_SRC_PATH) $(INC_FLAGS) `$(CONFIG) $(LLVM_COMPILE_FLAGS)` -c -o $(AST_OBJ)
 
-$(PARSER_OBJ):$(PARSER_SRC_PATH) $(PARSER_INC) $(TABLE_INC)
-	$(CC) -g $(PARSER_SRC_PATH) $(INC_FLAGS) `$(CONFIG) $(LLVM_COMPILE_FLAGS)` -c -o $(PARSER_OBJ)
+$(PARSER_OBJ):$(PARSER_SRC_PATH) $(PARSER_INC) $(TABLE_INC) $(LOG_INC)
+	$(CC) -g -O0 $(PARSER_SRC_PATH) $(INC_FLAGS) `$(CONFIG) $(LLVM_COMPILE_FLAGS)` -c -o $(PARSER_OBJ)
 
-$(CODEGEN_OBJ):$(CODEGEN_SRC_PATH) $(CODEGEN_INC) $(TABLE_INC)
+$(CODEGEN_OBJ):$(CODEGEN_SRC_PATH) $(CODEGEN_INC) $(TABLE_INC) $(LOG_INC)
 	$(CC) -g $(CODEGEN_SRC_PATH) $(INC_FLAGS) `$(CONFIG) $(LLVM_COMPILE_FLAGS)` -c -o $(CODEGEN_OBJ)
 
 clean:

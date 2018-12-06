@@ -9,7 +9,6 @@
 #include <string>
 #include <vector>
 
-
 /**
   * トークン種別
   */
@@ -30,7 +29,6 @@ enum TokenType{
   TOK_WRITE,       // Keyword: write
   TOK_WRITELN,     // Keyword: writeln
   TOK_ODD,         // Keyword: odd
-  TOK_ASSIGN,      // Symbol: :=
   TOK_EOF          // EOF
 };
 
@@ -45,10 +43,13 @@ private:
   std::string TokenString;
   int Number;
   int Line;
+  int Pos;       // トークンの最後の位置
+  Token *Prev;
 
 public:
-  Token(TokenType type, std::string string, int line)
-    : Type(type), TokenString(string), Line(line){
+  Token(){};
+  Token(TokenType type, std::string string, int line, int pos, Token *prev)
+    : Type(type), TokenString(string), Line(line), Pos(pos), Prev(prev){
     if (type == TOK_DIGIT)
       Number = atoi(string.c_str());
     else
@@ -56,12 +57,13 @@ public:
   };
   ~Token(){};
 
-  TokenType getTokenType() { return Type; };
-  std::string getTokenString() { return TokenString; };
+  const TokenType &getTokenType() const { return Type; };
+  const std::string &getTokenString() const { return TokenString; };
   int getNumberValue() { return Number; };
   bool setLine(int line) { Line = line; return true; }
-  int getLine() { return Line; }
-
+  const int &line() const { return Line; }
+  const int &pos() const { return Pos; }
+  const Token *prev() const { return Prev; }
 } Token;
 
 /**
@@ -69,7 +71,7 @@ public:
   */
 class TokenStream {
 private:
-    std::vector<std::unique_ptr<Token>> Tokens;
+    std::vector<Token> Tokens;
     int CurIndex;
 
 public:
@@ -79,19 +81,22 @@ public:
 
     bool ungetToken(int Times=1);
     bool getNextToken();
-    bool pushToken(std::unique_ptr<Token> token) {
-      Tokens.push_back(std::move(token));
+    bool pushToken(Token token) {
+      Tokens.push_back(token);
       return true;
     }
+    Token *getLastToken() {
+      return &Tokens.back();
+    }
     Token getToken();
-    TokenType getCurType() { return Tokens[CurIndex]->getTokenType(); }
-    std::string getCurString() { return Tokens[CurIndex]->getTokenString(); }
-    int getCurNumVal() { return Tokens[CurIndex]->getNumberValue(); }
+    TokenType getCurType() { return Tokens[CurIndex].getTokenType(); }
+    std::string getCurString() { return Tokens[CurIndex].getTokenString(); }
+    int getCurNumVal() { return Tokens[CurIndex].getNumberValue(); }
     bool printTokens();
     int getCurIndex() { return CurIndex; }
     bool applyTokenIndex(int index) { CurIndex=index;return true; }
     bool isSymbol(std::string str) { return getCurType() == TOK_SYMBOL && getCurString() == str; }
-    int getLine() { return Tokens[CurIndex]->getLine(); }
+    int getLine() { return Tokens[CurIndex].line(); }
 };
 
 std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename);
