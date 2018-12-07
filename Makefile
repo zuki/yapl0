@@ -43,7 +43,7 @@ INC_FLAGS = -I$(INC_DIR)/
 
 all:$(FRONT_OBJ)
 	mkdir -p $(BIN_DIR)
-	$(LINK) -g -O0 $(FRONT_OBJ) $(INC_FLAGS) `$(CONFIG) $(LLVM_FLAGS)` -lpthread -ldl -lm -rdynamic -o $(TOOL)
+	$(LINK) -g $(FRONT_OBJ) $(INC_FLAGS) `$(CONFIG) $(LLVM_FLAGS)` -lpthread -ldl -lm -rdynamic -o $(TOOL)
 
 $(MAIN_OBJ):$(MAIN_SRC_PATH) $(LOG_INC)
 	mkdir -p $(OBJ_DIR)
@@ -56,7 +56,7 @@ $(AST_OBJ):$(AST_SRC_PATH) $(AST_INC)
 	$(CC) -g $(AST_SRC_PATH) $(INC_FLAGS) `$(CONFIG) $(LLVM_COMPILE_FLAGS)` -c -o $(AST_OBJ)
 
 $(PARSER_OBJ):$(PARSER_SRC_PATH) $(PARSER_INC) $(TABLE_INC) $(LOG_INC)
-	$(CC) -g -O0 $(PARSER_SRC_PATH) $(INC_FLAGS) `$(CONFIG) $(LLVM_COMPILE_FLAGS)` -c -o $(PARSER_OBJ)
+	$(CC) -g $(PARSER_SRC_PATH) $(INC_FLAGS) `$(CONFIG) $(LLVM_COMPILE_FLAGS)` -c -o $(PARSER_OBJ)
 
 $(CODEGEN_OBJ):$(CODEGEN_SRC_PATH) $(CODEGEN_INC) $(TABLE_INC) $(LOG_INC)
 	$(CC) -g $(CODEGEN_SRC_PATH) $(INC_FLAGS) `$(CONFIG) $(LLVM_COMPILE_FLAGS)` -c -o $(CODEGEN_OBJ)

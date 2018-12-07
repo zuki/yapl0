@@ -12,7 +12,7 @@
 /**
   * トークン種別
   */
-enum TokenType{
+enum TokenType {
   TOK_IDENTIFIER,  // 識別子
   TOK_DIGIT,       // 数字
   TOK_SYMBOL,      // 記号
@@ -30,6 +30,21 @@ enum TokenType{
   TOK_WRITELN,     // Keyword: writeln
   TOK_ODD,         // Keyword: odd
   TOK_EOF          // EOF
+};
+
+struct TokenTypeStr : public std::string {
+  TokenTypeStr(TokenType t) {
+    if (t == TOK_IDENTIFIER)
+      assign("ident");
+    else if (t == TOK_DIGIT)
+      assign("number");
+    else if (t == TOK_SYMBOL)
+      assign("symbol");
+    else if (t == TOK_EOF)
+      assign("eof");
+    else
+      assign("keyword");
+  }
 };
 
 /**
@@ -78,8 +93,6 @@ public:
     TokenStream(): CurIndex(0) {}
     ~TokenStream();
 
-
-    bool ungetToken(int Times=1);
     bool getNextToken();
     bool pushToken(Token token) {
       Tokens.push_back(token);
@@ -94,9 +107,7 @@ public:
     int getCurNumVal() { return Tokens[CurIndex].getNumberValue(); }
     bool printTokens();
     int getCurIndex() { return CurIndex; }
-    bool applyTokenIndex(int index) { CurIndex=index;return true; }
     bool isSymbol(std::string str) { return getCurType() == TOK_SYMBOL && getCurString() == str; }
-    int getLine() { return Tokens[CurIndex].line(); }
 };
 
 std::unique_ptr<TokenStream> LexicalAnalysis(std::string input_filename);

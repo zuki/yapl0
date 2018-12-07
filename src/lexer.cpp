@@ -221,20 +221,6 @@ bool TokenStream::getNextToken(){
 
 
 /**
-  * インデックスをtimes回戻す
-  */
-bool TokenStream::ungetToken(int times) {
-  for (int i=0; i<times;i++) {
-    if (CurIndex == 0)
-      return false;
-    else
-      CurIndex--;
-  }
-  return true;
-}
-
-
-/**
   * 格納されたトークン一覧を表示する
   */
 bool TokenStream::printTokens() {

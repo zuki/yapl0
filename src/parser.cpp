@@ -1,5 +1,6 @@
 #include "parser.hpp"
 #include "log.hpp"
+#include "table.hpp"
 #include <iostream>
 #include <sstream>
 
@@ -15,13 +16,13 @@ Parser::Parser(std::string filename, bool debug = true) {
   * 構文解析実効
   * @return 解析成功：true　解析失敗：false
   */
-bool Parser::doParse() {
+bool Parser::parse() {
   std::stringstream ss;
   if (!Tokens) {
     Log::error("error at lexer: could not make Tokens");
     return false;
   }
-  bool result = visitProgram();
+  bool result = parseProgram();
   int num = Log::getErrorNum();
   if (num >= 1) {
     ss << num << " error";
@@ -46,14 +47,14 @@ std::unique_ptr<ProgramAST> Parser::getAST() {
   * TranslationUnit用構文解析メソッド
   * @return 解析成功：true　解析失敗：false
   */
-bool Parser::visitProgram() {
+bool Parser::parseProgram() {
   bool result = true;
 
   // block
-  blockIn();
-  std::unique_ptr<BlockAST> Block = visitBlock();
+  sym_table.blockIn();
+  std::unique_ptr<BlockAST> Block = parseBlock();
   if (!Block || Block->empty()) {
-    Log::error("error at visitBlock", false);
+    Log::error("error at parseBlock", false);
     result = false;
   } else {
     TheProgramAST =  llvm::make_unique<ProgramAST>(std::move(Block));
@@ -65,9 +66,9 @@ bool Parser::visitProgram() {
   }
 
   // 未定義の定数、変数、関数にアクセス
-  if (remainedTemp()) {
+  if (sym_table.remainedTemp()) {
     Log::error("remain undefined symbols", false);
-    dumpTempNames();
+    sym_table.dumpTempNames();
     result = false;
   }
 
@@ -81,7 +82,7 @@ bool Parser::visitProgram() {
   * @param TheProgramAST
   * @return true: 成功 false: 失敗
   */
-std::unique_ptr<BlockAST> Parser::visitBlock() {
+std::unique_ptr<BlockAST> Parser::parseBlock() {
   auto Block = llvm::make_unique<BlockAST>();
   while (true) {
     // std::moveするとuniq_ptrはnullになってしまうので
@@ -89,24 +90,24 @@ std::unique_ptr<BlockAST> Parser::visitBlock() {
     //bool c = false, v = false, f = false;
     if (Tokens->getCurType() == TOK_CONST) {
       Tokens->getNextToken(); // eat 'const'
-      auto const_decl = visitConstDecl();
+      auto const_decl = parseConst();
       if (const_decl)
         Block->setConstant(std::move(const_decl));
     } else if (Tokens->getCurType() == TOK_VAR) {
       Tokens->getNextToken(); // eat 'var'
-      auto var_decl = visitVarDecl();
+      auto var_decl = parseVar();
       if (var_decl)
         Block->setVariable(std::move(var_decl));
     } else if (Tokens->getCurType() == TOK_FUNCTION) {
       Tokens->getNextToken(); // eat 'function'
-      auto func_decl = visitFuncDecl();
+      auto func_decl = parseFunction();
       if (func_decl)
         Block->addFunction(std::move(func_decl));
     } else {
       break;
     }
   }
-  auto statement = visitStatement();
+  auto statement = parseStatement();
   if (statement) {
     Block->setStatement(std::move(statement));
   } else {
@@ -115,7 +116,7 @@ std::unique_ptr<BlockAST> Parser::visitBlock() {
   }
 
   // ブロック階層を下げる
-  blockOut();
+  sym_table.blockOut();
   return Block;
 }
 
@@ -125,7 +126,7 @@ std::unique_ptr<BlockAST> Parser::visitBlock() {
   * ConstDect用構文解析メソッド
   * @return 成功: std::unique_ptr<ConstDeclAST>, 失敗: nullptr
   */
-std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
+std::unique_ptr<ConstDeclAST> Parser::parseConst() {
   std::string name;
   std::size_t pos;
 
@@ -138,14 +139,14 @@ std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
       name = Tokens->getCurString();
       Tokens->getNextToken();   // eat ident
       checkGet("=");
-      if (findSymbol(name, CONST) > -1)
+      if (sym_table.findSymbol(name, CONST) > -1)
         Log::duplicateError("constant", name, Tokens->getToken());
       else {
-        if ((pos = findTemp(name)) > -1) {
-          deleteTemp(pos);
+        if ((pos = sym_table.findTemp(name)) > -1) {
+          sym_table.deleteTemp(pos);
           Log::deleteWarn(name, Tokens->getToken());
         }
-        addSymbol(name, CONST);
+        sym_table.addSymbol(name, CONST);
       }
       if (Tokens->getCurType() == TOK_DIGIT)
         ConstAST->addConstant(name, Tokens->getCurNumVal());
@@ -173,7 +174,7 @@ std::unique_ptr<ConstDeclAST> Parser::visitConstDecl() {
   * VarDecl用構文解析メソッド
   * @return 成功: std::unique_ptr<VarDeclAST>, 失敗: nullptr
   */
-std::unique_ptr<VarDeclAST> Parser::visitVarDecl() {
+std::unique_ptr<VarDeclAST> Parser::parseVar() {
   std::string name;
   int pos;
 
@@ -184,14 +185,14 @@ std::unique_ptr<VarDeclAST> Parser::visitVarDecl() {
       Log::error("missing var name", Tokens->getToken());
     } else {
       name = Tokens->getCurString();
-      if (findSymbol(name, VAR) > -1) {
+      if (sym_table.findSymbol(name, VAR) > -1) {
         Log::duplicateError("var", name, Tokens->getToken());
       } else {
-        if ((pos = findTemp(name)) > -1) {
-          deleteTemp(pos);
+        if ((pos = sym_table.findTemp(name)) > -1) {
+          sym_table.deleteTemp(pos);
           Log::deleteWarn(name, Tokens->getToken());
         }
-        addSymbol(name, VAR);
+        sym_table.addSymbol(name, VAR);
         VarAST->addVariable(name);
       }
       Tokens->getNextToken();   // eat ident
@@ -216,7 +217,7 @@ std::unique_ptr<VarDeclAST> Parser::visitVarDecl() {
   * FuncDecl用構文解析メソッド
   * @return 成功: std::unique_ptr<FuncDeclAST>, 失敗: nullptr
   */
-std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
+std::unique_ptr<FuncDeclAST> Parser::parseFunction() {
   std::string name, param;
   std::vector<std::string> parameters;
 
@@ -232,7 +233,7 @@ std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
   while(true){
     if (Tokens->getCurType() == TOK_IDENTIFIER) {
       param = Tokens->getCurString();
-      if (findSymbol(param, PARAM) > -1) {
+      if (sym_table.findSymbol(param, PARAM) > -1) {
           Log::duplicateError("param", param.c_str(), Tokens->getToken());
       } else {
           parameters.push_back(param);
@@ -257,17 +258,17 @@ std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
     Tokens->getNextToken(); // eat ';'
   }
   // check duplication of function
-  if (findSymbol(name, FUNC, true, parameters.size()) > -1) {
+  if (sym_table.findSymbol(name, FUNC, true, parameters.size()) > -1) {
     Log::duplicateError("func", name.c_str(), temp);
     return nullptr;
   }
-  addSymbol(name, FUNC, parameters.size());
+  sym_table.addSymbol(name, FUNC, parameters.size());
   // ここからブロックレベルを上げる
-  blockIn();
+  sym_table.blockIn();
   for (auto param : parameters)
-    addSymbol(param, PARAM);
+    sym_table.addSymbol(param, PARAM);
 
-  auto block = visitBlock();
+  auto block = parseBlock();
   if (!block) {
     Log::error("error in function block");
     return nullptr;
@@ -281,27 +282,27 @@ std::unique_ptr<FuncDeclAST> Parser::visitFuncDecl() {
   * Statement用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseStmtAST> Parser::visitStatement() {
+std::unique_ptr<BaseStmtAST> Parser::parseStatement() {
   std::unique_ptr<BaseStmtAST> statement;
 
   switch (Tokens->getCurType()) {
     case TOK_IDENTIFIER:
-      statement = visitAssign();
+      statement = parseAssign();
       break;
     case TOK_BEGIN:
-      statement = visitBeginEnd();
+      statement = parseBeginEnd();
       break;
     case TOK_IF:
-      statement = visitIfThen();
+      statement = parseIfThen();
       break;
     case TOK_WHILE:
-      statement = visitWhileDo();
+      statement = parseWhileDo();
       break;
     case TOK_RETURN:
-      statement = visitReturn();
+      statement = parseReturn();
       break;
     case TOK_WRITE:
-      statement = visitWrite();
+      statement = parseWrite();
       break;
     case TOK_WRITELN:
       statement = llvm::make_unique<WritelnAST>();
@@ -327,20 +328,20 @@ std::unique_ptr<BaseStmtAST> Parser::visitStatement() {
   * FuncDecl用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseStmtAST> Parser::visitAssign() {
+std::unique_ptr<BaseStmtAST> Parser::parseAssign() {
   std::string name;
 
   name = Tokens->getCurString();
-  if (findSymbol(name, FUNC, false, -1) > -1) {
+  if (sym_table.findSymbol(name, FUNC, false, -1) > -1) {
     Log::error("assign lhs is not var/par", Tokens->getToken());
-  } else if (findSymbol(name, VAR) == -1 && findSymbol(name, PARAM) == -1) {
-    addSymbol(name, TEMP);
+  } else if (sym_table.findSymbol(name, VAR) == -1 && sym_table.findSymbol(name, PARAM) == -1) {
+    sym_table.addTemp(name);
     Log::addWarn(name, Tokens->getToken());
   }
 
   Tokens->getNextToken(); // eat ident
   checkGet(":=");
-  auto rhs = visitExpression(nullptr);
+  auto rhs = parseExpression(nullptr);
   if (!rhs) {
     Log::error("Couldn't get rhs-expr of assignment", Tokens->getToken());
     return nullptr;
@@ -354,13 +355,13 @@ std::unique_ptr<BaseStmtAST> Parser::visitAssign() {
   * BeginEnd用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseStmtAST> Parser::visitBeginEnd() {
+std::unique_ptr<BaseStmtAST> Parser::parseBeginEnd() {
   std::unique_ptr<BaseStmtAST> statement;
   std::vector<std::unique_ptr<BaseStmtAST>> statements;
 
   Tokens->getNextToken(); // eat 'begin'
   while(true) {
-    statement = visitStatement();
+    statement = parseStatement();
     if (!statement) {
       return nullptr;
     }
@@ -389,17 +390,17 @@ std::unique_ptr<BaseStmtAST> Parser::visitBeginEnd() {
   * BeginEnd用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseStmtAST> Parser::visitIfThen() {
+std::unique_ptr<BaseStmtAST> Parser::parseIfThen() {
   Tokens->getNextToken(); // eat 'if'
   auto temp = Tokens->getToken();
-  auto condition = visitCondition();
+  auto condition = parseCondition();
   if (!condition) {
     Log::error("Couldn't get condition of if condition", temp);
     return nullptr;
   }
   checkGet("then");
   auto temp2 = Tokens->getToken();
-  auto statement = visitStatement();
+  auto statement = parseStatement();
   if (!statement) {
     Log::error("Couldn't get statement of if then", temp2);
     return nullptr;
@@ -412,17 +413,17 @@ std::unique_ptr<BaseStmtAST> Parser::visitIfThen() {
   * WhileDo用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseStmtAST> Parser::visitWhileDo() {
+std::unique_ptr<BaseStmtAST> Parser::parseWhileDo() {
   Tokens->getNextToken(); // eat 'while'
   auto temp = Tokens->getToken();
-  auto condition = visitCondition();
+  auto condition = parseCondition();
   if (!condition) {
     Log::error("Couldn't get condition of while condition", temp);
     return nullptr;
   }
   checkGet("do");
   auto temp2 = Tokens->getToken();
-  auto statement = visitStatement();
+  auto statement = parseStatement();
   if (!statement) {
     Log::error("Couldn't get statement of while do", temp2);
     return nullptr;
@@ -435,10 +436,10 @@ std::unique_ptr<BaseStmtAST> Parser::visitWhileDo() {
   * Return用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseStmtAST> Parser::visitReturn() {
+std::unique_ptr<BaseStmtAST> Parser::parseReturn() {
   Tokens->getNextToken(); // eat 'return'
   auto temp = Tokens->getToken();
-  auto expression = visitExpression(nullptr);
+  auto expression = parseExpression(nullptr);
   if (!expression) {
     Log::error("Couldn't get expr of return", temp);
     return nullptr;
@@ -451,10 +452,10 @@ std::unique_ptr<BaseStmtAST> Parser::visitReturn() {
   * Write用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseStmtAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseStmtAST> Parser::visitWrite() {
+std::unique_ptr<BaseStmtAST> Parser::parseWrite() {
   Tokens->getNextToken(); // eat 'write'
   auto temp = Tokens->getToken();
-  auto expression = visitExpression(nullptr);
+  auto expression = parseExpression(nullptr);
   if (!expression) {
     Log::error("Couldn't get expr of write", temp);
     return nullptr;
@@ -467,11 +468,11 @@ std::unique_ptr<BaseStmtAST> Parser::visitWrite() {
   * Write用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseExpAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseExpAST> Parser::visitCondition() {
+std::unique_ptr<BaseExpAST> Parser::parseCondition() {
   if (Tokens->getCurType() == TOK_ODD) {
     Tokens->getNextToken(); // eat 'odd'
     auto temp = Tokens->getToken();
-    auto rhs = visitExpression(nullptr);
+    auto rhs = parseExpression(nullptr);
     if (!rhs) {
       Log::error("Couldn't get odd expr of condition", temp);
       return nullptr;
@@ -480,7 +481,7 @@ std::unique_ptr<BaseExpAST> Parser::visitCondition() {
   }
 
   auto temp2 = Tokens->getToken();
-  auto lhs = visitExpression(nullptr);
+  auto lhs = parseExpression(nullptr);
   if (!lhs) {
     Log::error("Couldn't get lhs expr of condition", temp2);
     return nullptr;
@@ -493,7 +494,7 @@ std::unique_ptr<BaseExpAST> Parser::visitCondition() {
   }
   Tokens->getNextToken(); // eat Symbol
   auto temp3 = Tokens->getToken();
-  auto rhs = visitExpression(nullptr);
+  auto rhs = parseExpression(nullptr);
   if (!rhs) {
     Log::error("Couldn't get lhs expr of condition", temp3);
     return nullptr;
@@ -507,7 +508,7 @@ std::unique_ptr<BaseExpAST> Parser::visitCondition() {
   * Expression用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseExpAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseExpAST> Parser::visitExpression(std::unique_ptr<BaseExpAST> lhs) {
+std::unique_ptr<BaseExpAST> Parser::parseExpression(std::unique_ptr<BaseExpAST> lhs) {
   std::string prefix = "";
   std::string op;
 
@@ -518,7 +519,7 @@ std::unique_ptr<BaseExpAST> Parser::visitExpression(std::unique_ptr<BaseExpAST> 
 
   auto temp = Tokens->getToken();
   if (!lhs)
-    lhs = visitTerm(nullptr);
+    lhs = parseTerm(nullptr);
   if (!lhs) {
     Log::error("Couldn't get lhs expr of expression", temp);
     return nullptr;
@@ -528,9 +529,9 @@ std::unique_ptr<BaseExpAST> Parser::visitExpression(std::unique_ptr<BaseExpAST> 
     op = Tokens->getCurString();
     Tokens->getNextToken(); // eat '+' of '-'
     auto temp2 = Tokens->getToken();
-    auto rhs = visitTerm(nullptr);
+    auto rhs = parseTerm(nullptr);
     if (rhs) {
-      return visitExpression(llvm::make_unique<BinaryExprAST>(op, std::move(lhs), std::move(rhs), prefix));
+      return parseExpression(llvm::make_unique<BinaryExprAST>(op, std::move(lhs), std::move(rhs), prefix));
     } else {
       Log::error("Couldn't get rhs expr of expression", temp2);
       return nullptr;
@@ -545,12 +546,12 @@ std::unique_ptr<BaseExpAST> Parser::visitExpression(std::unique_ptr<BaseExpAST> 
   * Term用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseExpAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseExpAST> Parser::visitTerm(std::unique_ptr<BaseExpAST> lhs) {
+std::unique_ptr<BaseExpAST> Parser::parseTerm(std::unique_ptr<BaseExpAST> lhs) {
   std::string op;
 
   auto temp = Tokens->getToken();
   if (!lhs)
-    lhs = visitFactor();
+    lhs = parseFactor();
   if (!lhs) {
     Log::error("Couldn't get lhs expr of term", temp);
     return nullptr;
@@ -560,9 +561,9 @@ std::unique_ptr<BaseExpAST> Parser::visitTerm(std::unique_ptr<BaseExpAST> lhs) {
     op = Tokens->getCurString();
     Tokens->getNextToken(); // eat '*' or '/'
     auto temp2 = Tokens->getToken();
-    auto rhs = visitFactor();
+    auto rhs = parseFactor();
     if (rhs) {
-      return visitTerm(llvm::make_unique<BinaryExprAST>(op, std::move(lhs), std::move(rhs)));
+      return parseTerm(llvm::make_unique<BinaryExprAST>(op, std::move(lhs), std::move(rhs)));
     } else {
       Log::error("Couldn't get rhs expr of term", temp2);
       return nullptr;
@@ -578,21 +579,21 @@ std::unique_ptr<BaseExpAST> Parser::visitTerm(std::unique_ptr<BaseExpAST> lhs) {
   * Factor用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseExpAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseExpAST> Parser::visitFactor() {
+std::unique_ptr<BaseExpAST> Parser::parseFactor() {
   // identifier: 定義済み変数
   std::unique_ptr<BaseExpAST> baseAST;
   if (Tokens->getCurType() == TOK_IDENTIFIER) {
     std::string name = Tokens->getCurString();
     auto temp = Tokens->getToken();
     Tokens->getNextToken(); // eat ident
-    if (findSymbol(name, FUNC, false, -1) != -1) {
-      baseAST = visitCall(name, temp);
+    if (sym_table.findSymbol(name, FUNC, false, -1) != -1) {
+      baseAST = parseCall(name, temp);
     } else {
-      if (findSymbol(name, PARAM) == -1
-      && findSymbol(name, VAR, false, -1) == -1
-      && findSymbol(name, CONST, false, -1) == -1
-      && findTemp(name) == -1) {
-        addTemp(name);
+      if (sym_table.findSymbol(name, PARAM) == -1
+      && sym_table.findSymbol(name, VAR, false, -1) == -1
+      && sym_table.findSymbol(name, CONST, false, -1) == -1
+      && sym_table.findTemp(name) == -1) {
+        sym_table.addTemp(name);
         Log::addWarn(name, Tokens->getToken());
       }
       baseAST = llvm::make_unique<VariableAST>(name);
@@ -604,7 +605,7 @@ std::unique_ptr<BaseExpAST> Parser::visitFactor() {
   } else if (Tokens->isSymbol("(")) {
     Tokens->getNextToken(); // eat '('
     auto temp = Tokens->getToken();
-    auto expr = visitExpression(nullptr);
+    auto expr = parseExpression(nullptr);
     if (!expr) {
       Log::error("Couldn't get expr of paren", temp);
       return nullptr;
@@ -627,68 +628,26 @@ std::unique_ptr<BaseExpAST> Parser::visitFactor() {
   * Factor(関数呼び出し)用構文解析メソッド
   * @return 成功: std::unique_ptr<BaseExpAST>, 失敗: nullptr
   */
-std::unique_ptr<BaseExpAST> Parser::visitCall(const std::string &callee, Token token) {
+std::unique_ptr<BaseExpAST> Parser::parseCall(const std::string &callee, Token token) {
   auto call_expr = llvm::make_unique<CallExprAST>(callee);
   Tokens->getNextToken(); // eat '('
-  auto arg = visitExpression(nullptr);
+  auto arg = parseExpression(nullptr);
   if (arg) {
     while (true) {
       call_expr->addArg(std::move(arg));
       if (!Tokens->isSymbol(","))
         break;
       Tokens->getNextToken(); // eat ','
-      arg = visitExpression(nullptr);
+      arg = parseExpression(nullptr);
     }
   }
   checkGet(")");
 
-  if (findSymbol(callee, FUNC, false, call_expr->getNumOfArgs())  == -1) {
+  if (sym_table.findSymbol(callee, FUNC, false, call_expr->getNumOfArgs())  == -1) {
     Log::undefinedFuncError(callee, call_expr->getNumOfArgs(), token);
     return nullptr;
   }
   return call_expr;
-}
-
-void Parser::addSymbol(std::string name, NameType type, int num) {
-  SymbolTable.emplace_back(CurrentLevel, type, name, num);
-}
-
-void Parser::addTemp(std::string name) {
-  TempNames.push_back(name);
-}
-
-void Parser::deleteTemp(int pos) {
-  TempNames.erase(TempNames.begin()+pos);
-}
-
-int Parser::findTemp(const std::string &name) {
-  auto it = std::find(TempNames.cbegin(), TempNames.cend(), name);
-  if (it == TempNames.cend())
-    return -1;
-  return (int)std::distance(TempNames.cbegin(), it);
-}
-
-// SymbolTableから条件にあうTableEntryを探す
-//   見つかった場合は、その位置 (iterator)
-//   見つからなかった場合は -1
-int Parser::findSymbol(const std::string &name, const NameType &type, const bool &checkLevel, const int &num) {
-  auto result = std::find_if(
-    SymbolTable.crbegin(),
-    SymbolTable.crend(),
-    [&](const TableEntry &e) {
-      auto cond = e.name == name && e.type == type;
-      if (num != -1) cond = cond && e.num == num;
-      if (checkLevel) cond = cond && e.level == CurrentLevel;
-      return cond;
-    });
-  if (result == SymbolTable.crend())
-    return -1;
-  return -(result - SymbolTable.crend() + 1);
-}
-
-// true if temps are remained
-bool Parser::remainedTemp() {
-  return TempNames.size() > 0;
 }
 
 bool Parser::isKeyWord(std::string &name) {
@@ -736,11 +695,7 @@ void Parser::checkGet(std::string symbol) {
 }
 
 void Parser::check(const std::string &caller) {
-  std::string type_name[] = {
-    "ident", "number", "symbol", "kw", "kw", "kw", "kw", "kw", "kw",
-    "kw", "kw", "kw", "kw", "kw", "kw", "kw", "eof"
-  };
-  fprintf(stderr, "%s: name: %s, type: %s\n", caller.c_str(), Tokens->getCurString().c_str(), type_name[Tokens->getCurType()].c_str());
+  fprintf(stderr, "%s: name: %s, type: %s\n", caller.c_str(), Tokens->getCurString().c_str(), TokenTypeStr(Tokens->getCurType()).c_str());
 }
 
 bool Parser::isStmtBeginKey(const std::string &name) {
@@ -748,20 +703,5 @@ bool Parser::isStmtBeginKey(const std::string &name) {
     "begin", "if", "while", "return", "write", "writeln"
   };
   auto result = std::find(words.begin(), words.end(), name);
-  if (result == words.end())
-    return false;
-  return true;
-}
-
-void Parser::dumpNameTable() {
-  std::string type_name[] = { "CONST", "VAR", "PARAM", "FUNC", "TEMP" };
-  for (const TableEntry &e : SymbolTable)
-    fprintf(stderr, "[%d] %-10s %s\n", e.level, e.name.c_str(), type_name[e.type].c_str());
-}
-
-void Parser::dumpTempNames() {
-  fprintf(stderr, "remain symbols:");
-  for (const std::string &name : TempNames)
-    fprintf(stderr, " %s", name.c_str());
-  fprintf(stderr, "\n");
+  return result != words.end();
 }

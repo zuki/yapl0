@@ -1,7 +1,6 @@
 #ifndef CODEGEN_HPP
 #define CODEGEN_HPP
 
-
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/BasicBlock.h>
 #include <llvm/IR/DerivedTypes.h>
@@ -56,7 +55,7 @@ private:
   llvm::Function *curFunc;
   llvm::Function *writeFunc;
   llvm::Function *writelnFunc;
-  Table ident_table;
+  CodeTable ident_table;
 };
 
 #endif

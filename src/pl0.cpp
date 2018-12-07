@@ -45,7 +45,7 @@ int main(int argc, char **argv) {
   }
 
   auto TheParser = llvm::make_unique<Parser>(InputFileName, debug);
-  if (!TheParser->doParse()) {
+  if (!TheParser->parse()) {
     exit(1);
   } else {
     fprintf(stderr, "parse ok\n");

@@ -117,7 +117,7 @@ void CodeGen::statement(std::unique_ptr<BaseStmtAST> stmt_ast) {
 void CodeGen::statementAssign(std::unique_ptr<AssignAST> stmt_ast) {
   const auto &info = ident_table.find(stmt_ast->getName());
   llvm::Value *assignee = nullptr;
-  if (info.type == IdType::VAR) {
+  if (info.type == VAR) {
     assignee = info.val;
   } else {
     Log::error("variable is expected but it is not variable");
@@ -243,11 +243,11 @@ llvm::Value *CodeGen::callExp(std::unique_ptr<CallExprAST> exp_ast) {
 llvm::Value *CodeGen::variableExp(std::unique_ptr<VariableAST> exp_ast) {
   auto &val = ident_table.find(exp_ast->getName());
   switch (val.type) {
-  case IdType::CONST:
+  case CONST:
     return val.val;
-  case IdType::VAR:
+  case VAR:
     return TheBuilder.CreateLoad(val.val);
-  case IdType::PARAM:
+  case PARAM:
     return TheBuilder.CreateLoad(val.val);
   default:
     ; // for not warning

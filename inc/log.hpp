@@ -96,12 +96,7 @@ public:
   }
 
   static void token(Token token) {
-    std::string type_name[17] = {
-      "ident", "number", "symbol", "kw", "kw", "kw", "kw", "kw", "kw",
-      "kw", "kw", "kw", "kw", "kw", "kw", "kw", "eof"
-    };
-
-    fprintf(stderr, "[% 3d:% 3d] TOKEN: %-10s (%s)\n", token.line(), token.pos() - (int)token.getTokenString().size() + 1, token.getTokenString().c_str(), type_name[token.getTokenType()].c_str());
+      fprintf(stderr, "[% 3d:% 3d] TOKEN: %-10s (%s)\n", token.line(), token.pos() - (int)token.getTokenString().size() + 1, token.getTokenString().c_str(), TokenTypeStr(token.getTokenType()).c_str());
   }
 
   static int getErrorNum() {
