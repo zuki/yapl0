@@ -61,7 +61,7 @@ public:
     addSymbol(name, type, -1);
   }
 
-  int findSymbol(const std::string &name, const NameType &type, const bool &checkLevel, const int &num) {
+  bool findSymbol(const std::string &name, const NameType &type, const bool &checkLevel, const int &num) {
     auto result = std::find_if(symbolTable.crbegin(), symbolTable.crend(),
     [&](const SymInfo &e) {
       auto cond = e.name == name && e.type == type;
@@ -69,12 +69,10 @@ public:
       if (checkLevel) cond = cond && e.level == cur_level;
       return cond;
     });
-    if (result == symbolTable.crend())
-      return -1;
-    return -(result - symbolTable.crend() + 1);
+    return result == symbolTable.crend() ? false : true;
   }
 
-  int findSymbol(const std::string &name, const NameType &type) {
+  bool findSymbol(const std::string &name, const NameType &type) {
     return findSymbol(name, type, true, -1);
   }
 
@@ -82,15 +80,15 @@ public:
     tempNames.push_back(name);
   }
 
-  void deleteTemp(int pos) {
-    tempNames.erase(tempNames.begin()+pos);
+  void deleteTemp(const std::string &name) {
+    auto it = std::find(tempNames.begin(), tempNames.end(), name);
+    if (it != tempNames.end())
+      tempNames.erase(it);
   }
 
-  int findTemp(const std::string &name) {
+  bool findTemp(const std::string &name) {
     auto it = std::find(tempNames.cbegin(), tempNames.cend(), name);
-    if (it == tempNames.cend())
-      return -1;
-    return (int)std::distance(tempNames.cbegin(), it);
+    return it == tempNames.cend() ? false : true;
   }
 
   bool remainedTemp() {

@@ -128,7 +128,6 @@ std::unique_ptr<BlockAST> Parser::parseBlock() {
   */
 std::unique_ptr<ConstDeclAST> Parser::parseConst() {
   std::string name;
-  std::size_t pos;
 
   auto ConstAST = llvm::make_unique<ConstDeclAST>();
 
@@ -139,11 +138,11 @@ std::unique_ptr<ConstDeclAST> Parser::parseConst() {
       name = Tokens->getCurString();
       Tokens->getNextToken();   // eat ident
       checkGet("=");
-      if (sym_table.findSymbol(name, CONST) > -1)
+      if (sym_table.findSymbol(name, CONST))
         Log::duplicateError("constant", name, Tokens->getToken());
       else {
-        if ((pos = sym_table.findTemp(name)) > -1) {
-          sym_table.deleteTemp(pos);
+        if (sym_table.findTemp(name)) {
+          sym_table.deleteTemp(name);
           Log::deleteWarn(name, Tokens->getToken());
         }
         sym_table.addSymbol(name, CONST);
@@ -176,7 +175,6 @@ std::unique_ptr<ConstDeclAST> Parser::parseConst() {
   */
 std::unique_ptr<VarDeclAST> Parser::parseVar() {
   std::string name;
-  int pos;
 
   auto VarAST = llvm::make_unique<VarDeclAST>();
 
@@ -185,11 +183,11 @@ std::unique_ptr<VarDeclAST> Parser::parseVar() {
       Log::error("missing var name", Tokens->getToken());
     } else {
       name = Tokens->getCurString();
-      if (sym_table.findSymbol(name, VAR) > -1) {
+      if (sym_table.findSymbol(name, VAR)) {
         Log::duplicateError("var", name, Tokens->getToken());
       } else {
-        if ((pos = sym_table.findTemp(name)) > -1) {
-          sym_table.deleteTemp(pos);
+        if (sym_table.findTemp(name)) {
+          sym_table.deleteTemp(name);
           Log::deleteWarn(name, Tokens->getToken());
         }
         sym_table.addSymbol(name, VAR);
@@ -233,7 +231,7 @@ std::unique_ptr<FuncDeclAST> Parser::parseFunction() {
   while(true){
     if (Tokens->getCurType() == TOK_IDENTIFIER) {
       param = Tokens->getCurString();
-      if (sym_table.findSymbol(param, PARAM) > -1) {
+      if (sym_table.findSymbol(param, PARAM)) {
           Log::duplicateError("param", param.c_str(), Tokens->getToken());
       } else {
           parameters.push_back(param);
@@ -258,7 +256,7 @@ std::unique_ptr<FuncDeclAST> Parser::parseFunction() {
     Tokens->getNextToken(); // eat ';'
   }
   // check duplication of function
-  if (sym_table.findSymbol(name, FUNC, true, parameters.size()) > -1) {
+  if (sym_table.findSymbol(name, FUNC, true, parameters.size())) {
     Log::duplicateError("func", name.c_str(), temp);
     return nullptr;
   }
@@ -332,9 +330,9 @@ std::unique_ptr<BaseStmtAST> Parser::parseAssign() {
   std::string name;
 
   name = Tokens->getCurString();
-  if (sym_table.findSymbol(name, FUNC, false, -1) > -1) {
+  if (sym_table.findSymbol(name, FUNC, false, -1)) {
     Log::error("assign lhs is not var/par", Tokens->getToken());
-  } else if (sym_table.findSymbol(name, VAR) == -1 && sym_table.findSymbol(name, PARAM) == -1) {
+  } else if (!sym_table.findSymbol(name, VAR) && !sym_table.findSymbol(name, PARAM)) {
     sym_table.addTemp(name);
     Log::addWarn(name, Tokens->getToken());
   }
@@ -586,13 +584,13 @@ std::unique_ptr<BaseExpAST> Parser::parseFactor() {
     std::string name = Tokens->getCurString();
     auto temp = Tokens->getToken();
     Tokens->getNextToken(); // eat ident
-    if (sym_table.findSymbol(name, FUNC, false, -1) != -1) {
+    if (sym_table.findSymbol(name, FUNC, false, -1)) {
       baseAST = parseCall(name, temp);
     } else {
-      if (sym_table.findSymbol(name, PARAM) == -1
-      && sym_table.findSymbol(name, VAR, false, -1) == -1
-      && sym_table.findSymbol(name, CONST, false, -1) == -1
-      && sym_table.findTemp(name) == -1) {
+      if (!sym_table.findSymbol(name, PARAM)
+      && !sym_table.findSymbol(name, VAR, false, -1)
+      && !sym_table.findSymbol(name, CONST, false, -1)
+      && !sym_table.findTemp(name)) {
         sym_table.addTemp(name);
         Log::addWarn(name, Tokens->getToken());
       }
@@ -643,7 +641,7 @@ std::unique_ptr<BaseExpAST> Parser::parseCall(const std::string &callee, Token t
   }
   checkGet(")");
 
-  if (sym_table.findSymbol(callee, FUNC, false, call_expr->getNumOfArgs())  == -1) {
+  if (!sym_table.findSymbol(callee, FUNC, false, call_expr->getNumOfArgs())) {
     Log::undefinedFuncError(callee, call_expr->getNumOfArgs(), token);
     return nullptr;
   }
