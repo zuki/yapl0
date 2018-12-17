@@ -117,7 +117,7 @@ void CodeGen::statement(std::unique_ptr<BaseStmtAST> stmt_ast) {
 void CodeGen::statementAssign(std::unique_ptr<AssignAST> stmt_ast) {
   const auto &info = ident_table.find(stmt_ast->getName());
   llvm::Value *assignee = nullptr;
-  if (info.type == VAR) {
+  if (info.type == VAR || info.type == PARAM) {
     assignee = info.val;
   } else {
     Log::error("variable is expected but it is not variable");
