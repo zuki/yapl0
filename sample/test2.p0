@@ -43,9 +43,7 @@ begin
   return x
 end;
 
-{* comment *}
-const m = 7, n = 85; {* comment
-continue *}
+const m = 7, n = 85;
 var x, y;
 
 begin
